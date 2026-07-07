@@ -11,9 +11,13 @@ export function Dashboard() {
     <div className="min-h-svh bg-background">
       <DashboardHeader
         connected={payout.connected}
-        onConnect={payout.connect}
-        wallet={payout.wallet}
+        wrongNetwork={payout.wrongNetwork}
+        networkName={payout.networkName}
+        account={payout.account}
         balance={payout.balance}
+        walletError={payout.walletError}
+        onConnect={payout.connect}
+        onDisconnect={payout.disconnect}
       />
 
       <main className="mx-auto w-full max-w-[1160px] px-6 py-8 md:px-8 md:py-12">
@@ -43,14 +47,20 @@ export function Dashboard() {
             <div className="mb-5">
               <PayoutControls
                 connected={payout.connected}
+                wrongNetwork={payout.wrongNetwork}
+                networkName={payout.networkName}
                 selectedCount={payout.selectedCount}
                 selectedSum={payout.selectedSum}
                 outstandingCount={payout.outstandingCount}
+                blockedCount={payout.blockedCount}
                 shortfall={payout.shortfall}
                 allSelectedPaid={payout.allSelectedPaid}
                 anyPaid={payout.anyPaid}
                 paying={payout.paying}
+                verifying={payout.verifying}
                 canPayAll={payout.canPayAll}
+                batchPhase={payout.batchPhase}
+                payError={payout.payError}
                 rosterCount={payout.roster.length}
                 onAddPayee={payout.addPayee}
                 onImportRoster={payout.importRoster}
@@ -66,6 +76,11 @@ export function Dashboard() {
               paidIds={payout.paidIds}
               paying={payout.paying}
               connected={payout.connected}
+              wrongNetwork={payout.wrongNetwork}
+              verifyByPayee={payout.verifyByPayee}
+              rowBlocked={payout.rowBlocked}
+              rowTxState={payout.rowTxState}
+              txidByPayee={payout.txidByPayee}
               payRow={payout.payRow}
               updatePayee={payout.updatePayee}
               removePayee={payout.removePayee}

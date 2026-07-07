@@ -17,6 +17,8 @@ import {
 import { cn } from "@/lib/utils"
 import type { PayeeInput } from "@/lib/payeeValidation"
 import type { Payee } from "@/lib/roster"
+import type { BlockReason, TxState } from "@/hooks/usePayout"
+import type { VerifyLevel } from "@/lib/tron/validation"
 
 import { columns } from "./columns"
 
@@ -27,6 +29,11 @@ type PayoutTableProps = {
   paidIds: Set<string>
   paying: boolean
   connected: boolean
+  wrongNetwork: boolean
+  verifyByPayee: Map<string, VerifyLevel>
+  rowBlocked: Map<string, BlockReason>
+  rowTxState: Map<string, TxState>
+  txidByPayee: Map<string, string>
   payRow: (id: string) => void
   updatePayee: (id: string, input: PayeeInput) => Promise<void>
   removePayee: (id: string) => Promise<void>
@@ -39,6 +46,11 @@ export function PayoutTable({
   paidIds,
   paying,
   connected,
+  wrongNetwork,
+  verifyByPayee,
+  rowBlocked,
+  rowTxState,
+  txidByPayee,
   payRow,
   updatePayee,
   removePayee,
@@ -51,7 +63,19 @@ export function PayoutTable({
     enableRowSelection: true,
     getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
-    meta: { paidIds, paying, connected, payRow, updatePayee, removePayee },
+    meta: {
+      paidIds,
+      paying,
+      connected,
+      wrongNetwork,
+      verifyByPayee,
+      rowBlocked,
+      rowTxState,
+      txidByPayee,
+      payRow,
+      updatePayee,
+      removePayee,
+    },
   })
 
   return (

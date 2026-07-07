@@ -13,12 +13,47 @@ export type StoredPayee = {
   amount: number
 }
 
-export const db = new Dexie("purserpay") as Dexie & {
-  payees: EntityTable<StoredPayee, "id">
+// A confirmed on-chain payout batch — the local receipt behind a green row.
+// Stored client-side only (same promise as the roster: nothing on a server).
+// This is what makes "paid" survive a reload and blocks accidental re-payment,
+// and what Sprint 3D's PDF receipts will read.
+export type StoredPayment = {
+  id: string
+  /** On-chain transaction hash of the disperse. */
+  txid: string
+  /** Network key (e.g. "nile") — a receipt on one network never greens another. */
+  network: string
+  /** Date.now() at confirmation. */
+  timestamp: number
+  /** Roster ids paid in this batch (drives the green state). */
+  payeeIds: string[]
+  /** Snapshot of who got exactly what, for the receipt. */
+  recipients: { id: string; address: string; amount: number }[]
+  /** Batch total in USDT base units (stringified bigint). */
+  totalBaseUnits: string
 }
 
+// Small client-side key/value store. Holds the "green cycle" boundary
+// (greenSince): receipts stay forever (Sprint 3D reads them), but a payout is
+// monthly — Reset advances greenSince so the same roster can be paid again next
+// cycle without deleting history and without ever re-paying the current one.
+export type StoredMeta = { key: string; value: number }
+
+export const db = new Dexie("purserpay") as Dexie & {
+  payees: EntityTable<StoredPayee, "id">
+  payments: EntityTable<StoredPayment, "id">
+  meta: EntityTable<StoredMeta, "key">
+}
+
+// v1: roster only. v2 ADDS the payments + meta stores — additive, so existing
+// rosters are preserved untouched on upgrade.
 db.version(1).stores({
   payees: "id, order",
+})
+db.version(2).stores({
+  payees: "id, order",
+  payments: "id, txid, timestamp, *payeeIds",
+  meta: "key",
 })
 
 if (import.meta.env.DEV) {
