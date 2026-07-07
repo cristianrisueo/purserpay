@@ -1,4 +1,5 @@
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
+import { EmptyRoster } from "@/components/dashboard/EmptyRoster"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
 import { usePayout } from "@/hooks/usePayout"
@@ -27,31 +28,50 @@ export function Dashboard() {
           </p>
         </div>
 
-        <div className="mb-5">
-          <PayoutControls
-            connected={payout.connected}
-            selectedCount={payout.selectedCount}
-            selectedSum={payout.selectedSum}
-            outstandingCount={payout.outstandingCount}
-            shortfall={payout.shortfall}
-            allSelectedPaid={payout.allSelectedPaid}
-            anyPaid={payout.anyPaid}
-            paying={payout.paying}
-            canPayAll={payout.canPayAll}
-            onPayAll={payout.payAll}
-            onReset={payout.reset}
+        {payout.isLoading ? (
+          <div className="rounded-[14px] border border-border bg-card px-6 py-16 text-center text-[14px] text-muted-foreground">
+            Loading your roster…
+          </div>
+        ) : payout.isEmpty ? (
+          <EmptyRoster
+            rosterCount={payout.roster.length}
+            onAddPayee={payout.addPayee}
+            onImportRoster={payout.importRoster}
           />
-        </div>
+        ) : (
+          <>
+            <div className="mb-5">
+              <PayoutControls
+                connected={payout.connected}
+                selectedCount={payout.selectedCount}
+                selectedSum={payout.selectedSum}
+                outstandingCount={payout.outstandingCount}
+                shortfall={payout.shortfall}
+                allSelectedPaid={payout.allSelectedPaid}
+                anyPaid={payout.anyPaid}
+                paying={payout.paying}
+                canPayAll={payout.canPayAll}
+                rosterCount={payout.roster.length}
+                onAddPayee={payout.addPayee}
+                onImportRoster={payout.importRoster}
+                onPayAll={payout.payAll}
+                onReset={payout.reset}
+              />
+            </div>
 
-        <PayoutTable
-          data={payout.roster}
-          rowSelection={payout.rowSelection}
-          onRowSelectionChange={payout.setRowSelection}
-          paidIds={payout.paidIds}
-          paying={payout.paying}
-          connected={payout.connected}
-          payRow={payout.payRow}
-        />
+            <PayoutTable
+              data={payout.roster}
+              rowSelection={payout.rowSelection}
+              onRowSelectionChange={payout.setRowSelection}
+              paidIds={payout.paidIds}
+              paying={payout.paying}
+              connected={payout.connected}
+              payRow={payout.payRow}
+              updatePayee={payout.updatePayee}
+              removePayee={payout.removePayee}
+            />
+          </>
+        )}
       </main>
     </div>
   )

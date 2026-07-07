@@ -15,7 +15,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { cn } from "@/lib/utils"
-import type { Payee } from "@/lib/mockRoster"
+import type { PayeeInput } from "@/lib/payeeValidation"
+import type { Payee } from "@/lib/roster"
 
 import { columns } from "./columns"
 
@@ -27,6 +28,8 @@ type PayoutTableProps = {
   paying: boolean
   connected: boolean
   payRow: (id: string) => void
+  updatePayee: (id: string, input: PayeeInput) => Promise<void>
+  removePayee: (id: string) => Promise<void>
 }
 
 export function PayoutTable({
@@ -37,6 +40,8 @@ export function PayoutTable({
   paying,
   connected,
   payRow,
+  updatePayee,
+  removePayee,
 }: PayoutTableProps) {
   const table = useReactTable({
     data,
@@ -46,13 +51,13 @@ export function PayoutTable({
     enableRowSelection: true,
     getRowId: (row) => row.id,
     getCoreRowModel: getCoreRowModel(),
-    meta: { paidIds, paying, connected, payRow },
+    meta: { paidIds, paying, connected, payRow, updatePayee, removePayee },
   })
 
   return (
     <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[0_1px_2px_rgba(17,16,20,0.04),0_18px_40px_-30px_rgba(17,16,20,0.22)]">
       <div className="overflow-x-auto">
-        <Table className="min-w-[760px]">
+        <Table className="min-w-[740px]">
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
               <TableRow

@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { RowSelectionState } from "@tanstack/react-table"
+import { useLiveQuery } from "dexie-react-hooks"
 
-import { MOCK_BALANCE, MOCK_WALLET, mockRoster, type Payee } from "@/lib/mockRoster"
+import { db } from "@/lib/db"
+import { MOCK_BALANCE, MOCK_WALLET } from "@/lib/mockRoster"
+import type { PayeeInput } from "@/lib/payeeValidation"
+import {
+  addPayee as addPayeeToDb,
+  removePayee as removePayeeFromDb,
+  replaceRoster,
+  toPayee,
+  updatePayee as updatePayeeInDb,
+  type Payee,
+} from "@/lib/roster"
 
 const STAGGER_MS = 220
 
@@ -13,18 +24,24 @@ function prefersReducedMotion() {
 }
 
 /**
- * The living-table state machine (Sprint 2, mock-fed). Owns row selection,
- * paid state, the mock wallet connection, and every derived signal the UI needs
- * — all real React state; only the chain and storage are faked. The 5 rules:
+ * The living-table state machine, now Dexie-backed. Owns row selection, paid
+ * state (both ephemeral, session-only), the mock wallet connection, and every
+ * derived signal the UI needs. The roster itself is real, persisted data. The
+ * 5 rules:
  *  1. all rows checked by default   2. uncheck never deletes
  *  3. green = paid                  4. reset clears greens
  *  5. balance-aware: lock Pay all + show the exact shortfall when short.
  */
 export function usePayout() {
-  // Rule 1 — everyone checked on load.
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>(() =>
-    Object.fromEntries(mockRoster.map((p) => [p.id, true]))
+  const liveRows = useLiveQuery(() => db.payees.orderBy("order").toArray(), [])
+  const isLoading = liveRows === undefined
+  const roster = useMemo<Payee[]>(
+    () => (liveRows ?? []).map(toPayee),
+    [liveRows]
   )
+  const isEmpty = !isLoading && roster.length === 0
+
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [paidIds, setPaidIds] = useState<Set<string>>(() => new Set())
   const [paying, setPaying] = useState(false)
   const [connected, setConnected] = useState(false)
@@ -35,11 +52,35 @@ export function usePayout() {
     return () => pending.forEach(clearTimeout)
   }, [])
 
+  // Rule 1 over live data — auto-check any row id not yet seen this mount.
+  // Covers first load (everything unseen → all checked), a CSV overwrite
+  // (every row gets a fresh UUID → all unseen → all checked), and adding one
+  // payee (only the new id is unseen; everyone else's toggle is untouched).
+  const knownIds = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    // Compute which ids are new and mutate the ref here, in the effect body —
+    // NOT inside the setState updater below. React (in Strict Mode) invokes
+    // state updater functions twice to check they're pure; a ref mutation
+    // inside the updater would be "seen" by the second invocation, making it
+    // think those ids were already known and silently drop the check.
+    const newIds = roster.filter((p) => !knownIds.current.has(p.id)).map((p) => p.id)
+    roster.forEach((p) => knownIds.current.add(p.id))
+    if (newIds.length === 0) return
+
+    setRowSelection((prev) => {
+      const next = { ...prev }
+      newIds.forEach((id) => {
+        next[id] = true
+      })
+      return next
+    })
+  }, [roster])
+
   const balance = connected ? MOCK_BALANCE : null
 
   const selected = useMemo(
-    () => mockRoster.filter((p) => rowSelection[p.id]),
-    [rowSelection]
+    () => roster.filter((p) => rowSelection[p.id]),
+    [roster, rowSelection]
   )
   const selectedSum = useMemo(
     () => selected.reduce((sum, p) => sum + p.amount, 0),
@@ -108,9 +149,46 @@ export function usePayout() {
     })
   }, [canPayAll, outstanding, markPaid])
 
+  const forgetRow = useCallback((id: string) => {
+    setRowSelection((prev) => {
+      if (!(id in prev)) return prev
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    setPaidIds((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
+  }, [])
+
+  const addPayee = useCallback(async (input: PayeeInput) => {
+    await addPayeeToDb(input)
+  }, [])
+
+  const updatePayee = useCallback(async (id: string, input: PayeeInput) => {
+    await updatePayeeInDb(id, input)
+  }, [])
+
+  const removePayee = useCallback(
+    async (id: string) => {
+      await removePayeeFromDb(id)
+      forgetRow(id)
+    },
+    [forgetRow]
+  )
+
+  const importRoster = useCallback(async (rows: PayeeInput[]) => {
+    await replaceRoster(rows)
+  }, [])
+
   return {
-    roster: mockRoster as Payee[],
+    roster,
     wallet: MOCK_WALLET,
+    isLoading,
+    isEmpty,
     // state
     rowSelection,
     setRowSelection,
@@ -131,6 +209,10 @@ export function usePayout() {
     reset,
     payRow,
     payAll,
+    addPayee,
+    updatePayee,
+    removePayee,
+    importRoster,
   }
 }
 

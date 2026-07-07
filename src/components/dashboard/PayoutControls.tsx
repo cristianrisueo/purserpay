@@ -1,7 +1,9 @@
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatUsdt } from "@/lib/format"
+import type { PayeeInput } from "@/lib/payeeValidation"
 
+import { AddPayeeButton } from "./AddPayeeButton"
 import { ImportCsvDialog } from "./ImportCsvDialog"
 
 type PayoutControlsProps = {
@@ -14,6 +16,9 @@ type PayoutControlsProps = {
   anyPaid: boolean
   paying: boolean
   canPayAll: boolean
+  rosterCount: number
+  onAddPayee: (input: PayeeInput) => Promise<void>
+  onImportRoster: (rows: PayeeInput[]) => Promise<void>
   onPayAll: () => void
   onReset: () => void
 }
@@ -51,6 +56,9 @@ export function PayoutControls({
   anyPaid,
   paying,
   canPayAll,
+  rosterCount,
+  onAddPayee,
+  onImportRoster,
   onPayAll,
   onReset,
 }: PayoutControlsProps) {
@@ -85,7 +93,8 @@ export function PayoutControls({
       </div>
 
       <div className="flex items-center gap-2.5">
-        <ImportCsvDialog />
+        <ImportCsvDialog rosterCount={rosterCount} onImport={onImportRoster} />
+        <AddPayeeButton onAdd={onAddPayee} variant="outline" collapseLabel />
         <Button
           variant="ghost"
           onClick={onReset}

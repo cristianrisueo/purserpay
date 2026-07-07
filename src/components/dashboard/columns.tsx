@@ -4,7 +4,10 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { cn } from "@/lib/utils"
 import { formatUsdt, truncateAddress } from "@/lib/format"
-import type { Payee } from "@/lib/mockRoster"
+import type { PayeeInput } from "@/lib/payeeValidation"
+import type { Payee } from "@/lib/roster"
+
+import { RosterRowActions } from "./RosterRowActions"
 
 // Per-row app state the cells need, handed in via the table instance so the
 // column defs stay pure. Updated fresh on every render of the table.
@@ -15,6 +18,8 @@ declare module "@tanstack/react-table" {
     paying: boolean
     connected: boolean
     payRow: (id: string) => void
+    updatePayee: (id: string, input: PayeeInput) => Promise<void>
+    removePayee: (id: string) => Promise<void>
   }
 }
 
@@ -85,23 +90,9 @@ export const columns: ColumnDef<Payee>[] = [
     cell: ({ row, table }) => {
       const meta = table.options.meta!
       const paid = meta.paidIds.has(row.original.id)
-      const isDouble = row.original.check === "double"
 
       return (
         <div className="flex items-center justify-end gap-3">
-          {/* Static mock double-check: ✓ valid on TRON · ✓✓ also paid before. */}
-          <span
-            className="font-mono text-[12px] font-semibold text-primary"
-            title={
-              isDouble
-                ? "Valid on TRON · paid before"
-                : "Valid on TRON"
-            }
-            aria-label={isDouble ? "Valid, paid before" : "Valid on TRON"}
-          >
-            {isDouble ? "✓✓" : "✓"}
-          </span>
-
           <span
             className={cn(
               "inline-flex w-[84px] items-center justify-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px]",
@@ -123,6 +114,22 @@ export const columns: ColumnDef<Payee>[] = [
             {paid ? "Done" : "Pay"}
           </Button>
         </div>
+      )
+    },
+  },
+  {
+    id: "actions",
+    header: "",
+    enableSorting: false,
+    cell: ({ row, table }) => {
+      const meta = table.options.meta!
+      return (
+        <RosterRowActions
+          payee={row.original}
+          disabled={meta.paying}
+          onUpdate={meta.updatePayee}
+          onRemove={meta.removePayee}
+        />
       )
     },
   },
