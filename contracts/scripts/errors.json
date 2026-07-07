@@ -1,0 +1,51 @@
+{
+  "network": "nile",
+  "disperse": "TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x",
+  "token": "TSYr24mf1npLVWXAJqsDUo9yQwDCSWpqdt",
+  "checks": [
+    {
+      "guard": "LengthMismatch",
+      "txid": "314151c82929c31cb45edd48f2e90fd57094bdf248f09f1bd75187fd9dbb6053",
+      "txLink": "https://nile.tronscan.org/#/transaction/314151c82929c31cb45edd48f2e90fd57094bdf248f09f1bd75187fd9dbb6053",
+      "result": "REVERT",
+      "reverted": true,
+      "selector": "0xab8b67c6",
+      "decodedError": "LengthMismatch(uint256,uint256)",
+      "energy": 874,
+      "trxBurned": 0.0443
+    },
+    {
+      "guard": "EmptyBatch",
+      "txid": "244cf7948fc87fdc1ec2326078f35b92651e182b1ce4530edaa95e7e648c60b2",
+      "txLink": "https://nile.tronscan.org/#/transaction/244cf7948fc87fdc1ec2326078f35b92651e182b1ce4530edaa95e7e648c60b2",
+      "result": "REVERT",
+      "reverted": true,
+      "selector": "0xc2e5347d",
+      "decodedError": "EmptyBatch()",
+      "energy": 858,
+      "trxBurned": 0.0783
+    },
+    {
+      "guard": "ZeroAddressRecipient",
+      "txid": "be8c4eb271e3a0a04f55cf14bbcc0aa032e23855d2ffa8a5d687119a51f3aec9",
+      "txLink": "https://nile.tronscan.org/#/transaction/be8c4eb271e3a0a04f55cf14bbcc0aa032e23855d2ffa8a5d687119a51f3aec9",
+      "result": "REVERT",
+      "reverted": true,
+      "selector": "0x0ae5f8db",
+      "decodedError": "ZeroAddressRecipient(uint256)",
+      "energy": 1252,
+      "trxBurned": 0.1177
+    },
+    {
+      "guard": "ZeroAmount",
+      "txid": "742c5f821eecdb6a524865c9ff78fcff5ee5530bcfe0652c43b2192de079cbb9",
+      "txLink": "https://nile.tronscan.org/#/transaction/742c5f821eecdb6a524865c9ff78fcff5ee5530bcfe0652c43b2192de079cbb9",
+      "result": "REVERT",
+      "reverted": true,
+      "selector": "0x9af70448",
+      "decodedError": "ZeroAmount(uint256)",
+      "energy": 1275,
+      "trxBurned": 0.1196
+    }
+  ]
+}
