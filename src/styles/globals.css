@@ -1,0 +1,78 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter-tight";
+
+@theme inline {
+    --font-sans: 'Inter Tight Variable', sans-serif;
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --color-success: var(--success);
+    --color-bg-band: var(--bg-band);
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+    --radius: 0.75rem;
+
+    /* Purser Pay brand palette — single source of truth (see CLAUDE.md) */
+    --brand-accent: #0FB5C9;
+    --bg: #FAF9F7;
+    --surface: #FFFFFF;
+    --bg-band: #F1EFEC;
+    --ink: #111014;
+    --muted-text: #615C57;
+    --hairline: #E5E2DD;
+    --success: #2F9E6B;
+
+    /* shadcn semantic slots, remapped onto the brand palette */
+    --background: var(--bg);
+    --foreground: var(--ink);
+    --card: var(--surface);
+    --card-foreground: var(--ink);
+    --popover: var(--surface);
+    --popover-foreground: var(--ink);
+    --primary: var(--brand-accent);
+    --primary-foreground: #FFFFFF;
+    --secondary: var(--bg-band);
+    --secondary-foreground: var(--ink);
+    --muted: var(--bg-band);
+    --muted-foreground: var(--muted-text);
+    --accent: var(--bg-band);
+    --accent-foreground: var(--ink);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: var(--hairline);
+    --input: var(--hairline);
+    --ring: var(--brand-accent);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
