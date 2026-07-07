@@ -34,7 +34,7 @@ export async function removePayee(id: string): Promise<void> {
 }
 
 /** The CSV overwrite path: atomic clear + bulk add. Every row must already be
- *  validated by the caller (parseRosterCsv) — this re-validates as
+ *  validated by the caller (applyMapping) — this re-validates as
  *  defense-in-depth. If anything fails, the transaction rolls back and the
  *  existing roster is left completely untouched, never half-written. */
 export async function replaceRoster(rows: PayeeInput[]): Promise<void> {

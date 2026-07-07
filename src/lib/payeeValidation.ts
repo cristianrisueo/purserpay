@@ -11,15 +11,26 @@ export type ValidationResult =
 
 // Shape only — starts with T, ~34 base58-ish characters. NOT the real Sprint
 // 3B on-chain/checksum validation; this just rejects obviously-wrong input
-// (empty cell, a pasted 0x… address, a truncated paste).
-const TRON_ADDRESS_SHAPE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
+// (empty cell, a pasted 0x… address, a truncated paste). Exported so the CSV
+// importer can reuse the exact same shape check to detect a missing header
+// row (a real address value sitting where a header should be).
+export const TRON_ADDRESS_SHAPE = /^T[1-9A-HJ-NP-Za-km-z]{33}$/
 
-/** Parses a money-field string into a positive finite number. Strips
- *  thousands separators and surrounding whitespace; rejects everything else. */
+// Plain digits, or US-grouped thousands (comma every 3 digits), with an
+// optional "." decimal — and nothing else. Checked BEFORE any parsing so
+// JS's own permissive number coercion never gets a say: unchecked, Number()
+// silently accepts scientific notation ("1E2" → 100) and hex ("0x10" → 16),
+// and naively stripping commas silently misreads a European "1.234,56" (a
+// human's 1234.56) as 1.23456 — wrong money, not an error. Reject all of it.
+const AMOUNT_SHAPE = /^\d+(\.\d+)?$|^\d{1,3}(,\d{3})+(\.\d+)?$/
+
+/** Parses a money-field string into a positive finite number. Strips valid
+ *  US-style thousands separators and surrounding whitespace; rejects
+ *  anything that isn't unambiguously a plain positive number. */
 export function parseAmount(raw: string): number | null {
-  const cleaned = raw.trim().replace(/,/g, "")
-  if (cleaned === "") return null
-  const n = Number(cleaned)
+  const cleaned = raw.trim()
+  if (cleaned === "" || !AMOUNT_SHAPE.test(cleaned)) return null
+  const n = Number(cleaned.replace(/,/g, ""))
   if (!Number.isFinite(n) || n <= 0) return null
   return n
 }
