@@ -1,17 +1,32 @@
-import { Link } from "react-router-dom"
-
-import { Button } from "@/components/ui/button"
+import { FaqSection } from "@/components/landing/FaqSection"
+import { FeaturesSection } from "@/components/landing/FeaturesSection"
+import { FinalCta } from "@/components/landing/FinalCta"
+import { Hero } from "@/components/landing/Hero"
+import { HowItWorks } from "@/components/landing/HowItWorks"
+import { MoatSection } from "@/components/landing/MoatSection"
+import { PricingSection } from "@/components/landing/PricingSection"
+import { ProblemSection } from "@/components/landing/ProblemSection"
+import { SiteFooter } from "@/components/landing/SiteFooter"
+import { SiteHeader } from "@/components/landing/SiteHeader"
 
 export function Landing() {
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background px-6 text-center">
-      <h1 className="text-4xl font-medium text-foreground">Purser Pay</h1>
-      <p className="max-w-md text-muted-foreground">
-        Paga a tu equipo en USDT sin que el dinero pase por nosotros.
-      </p>
-      <Button asChild>
-        <Link to="/dashboard">Entrar al dashboard</Link>
-      </Button>
+    <div className="min-h-svh bg-background">
+      <SiteHeader />
+      <main>
+        <Hero />
+        <div className="mx-auto w-full max-w-[1160px] px-8 pt-[clamp(36px,5vw,56px)]">
+          <div className="h-px bg-border" />
+        </div>
+        <ProblemSection />
+        <HowItWorks />
+        <MoatSection />
+        <FeaturesSection />
+        <PricingSection />
+        <FaqSection />
+        <FinalCta />
+      </main>
+      <SiteFooter />
     </div>
   )
 }

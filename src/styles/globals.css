@@ -2,9 +2,11 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter-tight";
+@import "@fontsource-variable/jetbrains-mono";
 
 @theme inline {
     --font-sans: 'Inter Tight Variable', sans-serif;
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
     --color-ring: var(--ring);
     --color-input: var(--input);
     --color-border: var(--border);
