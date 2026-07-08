@@ -31,30 +31,57 @@ brand.
 - This is the legal moat (arm's-length, no money-transmitter license) AND the sales
   pitch. Any code, copy, or feature that breaks this is wrong by definition.
 
-**Client data never leaves the device.** The team roster (names, addresses, amounts)
-lives in the browser (IndexedDB), never on a server. There is no backend that stores
-client financial data. "We don't store anything" is literally true — keep it true.
+This is Tier 1 and it is absolute — the server-side architecture below changes
+nothing about it. Purser gains a backend to hide API keys, screen for OFAC, and gate
+the subscription; it never gains custody of funds, keys, or broadcast.
 
-If a task ever seems to require holding funds, storing the roster server-side, or
-broadcasting on the client's behalf — STOP and flag it. It's almost certainly the
-wrong approach.
+**Data dissociation — we store nothing we can read.** Two tiers of data, two rules:
+
+- The **team roster** (payee names, addresses, amounts) stays **device-local**
+  (IndexedDB). It is never sent to a server in readable form — the batch the client
+  chooses to build is the only thing that ever leaves the browser, and it leaves as a
+  transaction they sign themselves.
+- The **account holder's own PII** (name, country, tax ID) plus auth and subscription
+  state persist in **Supabase, encrypted at rest (pgcrypto AES-256)**. Wallet
+  addresses touched for OFAC screening are **salted-SHA-256 hashed** before any
+  persistence. Purser stores nothing it can read, and nothing that ties a person to
+  their payouts.
+
+If a task ever seems to require holding funds/keys, broadcasting on the client's
+behalf, storing the **roster** server-side, or storing **readable** PII — STOP and
+flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
+
+> Note: the live public copy still says "your data never leaves your machine" and "we
+> don't store it." Those lines are **frozen** during the migration and flagged for a
+> post-migration copy pass — see **Pending Post-Migration Reconciliation** at the end.
 
 ---
 
 ## STACK (closed — execute, don't re-litigate)
 
-- **Frontend:** Vite + React + TypeScript. SPA. Landing at `/`, app at `/dashboard`.
-  No Next, no SSR — this is a static SPA with client-side logic.
+> Migration status: the repo is still Vite today. The Next.js + Supabase port is the
+> active infra task. During it, **zero design/copy drift** — the ported app must be
+> 1:1 with the current build (see the Migration Phase below and both auditors).
+
+- **Frontend:** Next.js (App Router) + React + TypeScript, deployed on Vercel (was a
+  Vite SPA). Landing at `/`, app at `/dashboard`. Server components, route handlers,
+  and Edge middleware carry the server-side logic — hiding API keys, enforcing OFAC.
 - **UI:** shadcn/ui + Tailwind + Radix. Components copied into the repo (we own them).
 - **Table (the core of the app):** TanStack Table via shadcn data-table.
-- **Persistence:** IndexedDB via Dexie.js. Client-side only. The roster persists here.
+- **Persistence — two tiers:**
+  - **Roster:** IndexedDB via Dexie.js. Device-local, client-side only. Never leaves
+    the browser in readable form. (Unchanged from V1.)
+  - **Account + compliance:** Supabase (Postgres) holds the account holder's encrypted
+    PII (pgcrypto AES-256), auth, and subscription state, plus salted-hashed
+    OFAC-screening data. The server never receives the roster.
 - **Web3:** tronweb + TronLink / WalletConnect for address validation, batch build,
   and signing. (No Ledger/WebUSB in V1.)
 - **Payout contract:** our own minimal, ownerless, immutable disperse contract on TRON.
-- **Billing / gate:** Stripe + one or two Vercel serverless functions (in `/api`).
-  Magic-link auth (Supabase Auth `signInWithOtp`). The gate only checks "active Stripe
-  sub?" — it never sees the roster or funds.
-- **Deploy:** single repo, Vercel, zero infra to maintain.
+- **Billing / gate:** an **on-chain subscription smart contract** — 250 USDT/mo or
+  2,500 USDT/yr (2 months free), paid on-chain. **No Stripe, no card, no fiat.** The
+  gate checks "active on-chain subscription?" via a Vercel route handler; magic-link
+  auth (Supabase Auth `signInWithOtp`) stays. The gate never sees the roster or funds.
+- **Deploy:** single repo, Vercel (Next.js runtime + serverless / edge functions).
 
 ### Design tokens (match the landing exactly)
 
@@ -67,6 +94,27 @@ wrong approach.
 - Success ("paid" rows only): `#2F9E6B`
 - Type: **Inter Tight** throughout. Sentence case. NOT uppercase-condensed.
 - Radii: soft, 10–14px. Subtle warm shadows allowed. Flat, clean, modern SaaS.
+
+---
+
+## LEGAL & COMPLIANCE GUARDRAILS (the reason a server exists at all)
+
+Purser runs a backend for exactly four reasons: hide API keys, enforce OFAC, gate the
+on-chain subscription, and hold encrypted account PII. It still never touches funds,
+keys, broadcast, or the roster.
+
+- **OFAC / sanctions screening.** Recipient addresses are screened server-side against
+  the OFAC SDN / sanctions list before a batch can be built or signed. The list and
+  the screening keys stay server-side (never shipped to the client). Any address
+  persisted for screening is salted-SHA-256 hashed, never stored in the clear. A
+  flagged address blocks the batch — no partial workaround.
+- **GDPR — dissociation + Art. 17 erasure.** Account-holder PII (name, country, tax
+  ID) is encrypted at rest with pgcrypto (AES-256); wallets are salted-hashed. The
+  schema dissociates identity from payout activity by design. A "right to erasure"
+  request wipes the account's PII from Supabase; the roster is already device-local, so
+  it is under the user's control from the start.
+- **Secrets discipline.** API keys, the OFAC feed, and any service credentials live
+  server-side only. Nothing sensitive is ever bundled into client code.
 
 ---
 
@@ -87,6 +135,10 @@ tired at 11pm and **not being afraid of screwing up**. That's the product.
 
 ## BUILD PHASES (in order — frontend first, per owner decision)
 
+Phases 1–4 are the original **Vite-v1** build record. Phases 1–3 shipped; Phase 4's
+gate was never built under Vite and is now re-specified on-chain inside the Migration
+Phase. Kept here for history — read them as "what V1 was."
+
 **Phase 1 — The shell (start here, MOCK data, zero web3):**
 Vite + React + TS, shadcn with the custom theme, `/dashboard` route, and the central
 table with TanStack Table: columns `[checkbox | name | address | USDT | status]`,
@@ -103,10 +155,31 @@ connect wallet, read USDT balance, build the unsigned batch, the disperse flow
 (`approve` once → `disperse` one signature per batch), paint rows green on-chain
 confirm.
 
-**Phase 4 — The gate + receipts:** Stripe + magic-link, the `/api` function, PDF
-receipts with Tronscan links (individual = name + date, group = "group" + date).
+**Phase 4 — The gate + receipts (superseded):** originally Stripe + magic-link + an
+`/api` function. Billing is now on-chain (no Stripe) — folded into the Migration
+Phase. PDF receipts with Tronscan links (individual = name + date, group = "group" +
+date) still stand.
 
 Ship each phase visible before starting the next. One step, see it, next.
+
+---
+
+## MIGRATION PHASE — Vite → Next.js + Supabase + compliance (current)
+
+The active infra work. Order matters; each step ships visible and verified before the
+next.
+
+1. **Port the frontend 1:1.** Move the Vite SPA to Next.js (App Router) with **zero
+   design or copy drift** — the ported app must render and read identically to the
+   current build. This is a plumbing move, not a redesign. (Both auditors verify parity.)
+2. **Stand up Supabase.** Account-holder PII encrypted at rest (pgcrypto AES-256), auth
+   (magic-link, `signInWithOtp`), subscription state. The roster stays in Dexie.
+3. **OFAC middleware.** Server-side recipient screening before a batch can be built;
+   salted-hashed persistence only; a hit blocks the batch.
+4. **On-chain subscription.** Swap the billing gate to the subscription smart contract
+   (250 USDT/mo or 2,500 USDT/yr). Retire Stripe entirely.
+5. **Post-migration copy reconciliation.** Only after the port is verified 1:1, open a
+   dedicated copy pass to update the frozen landing lines (see Pending Reconciliation).
 
 ---
 
@@ -115,7 +188,11 @@ Ship each phase visible before starting the next. One step, see it, next.
 - Chain: **TRON only**, token **USDT (TRC20)**. Multichain does NOT exist yet — don't
   build for or promise Base/Arbitrum/etc.
 - Wallets in V1: **TronLink + WalletConnect**. (No Ledger yet.)
-- Pricing: **€249/month or €2,490/year** (2 months free).
+- Pricing: **250 USDT/month or 2,500 USDT/year** (2 months free), paid **on-chain via
+  smart contract** — no fiat, no card, no Stripe.
+- Storage: the **roster stays device-local** (IndexedDB); **account-holder PII is
+  stored server-side encrypted** (pgcrypto AES-256 — dissociation); recipient addresses
+  are salted-hashed for OFAC. Purser stores nothing it can read.
 - The disperse contract is **ours, ownerless, immutable** — not a third party's.
 - The batch is **atomic**: all recipients paid in one tx, or none. No partial payout.
   Check balance ≥ sum-of-selected BEFORE enabling "Pay all"; if short, lock the button
@@ -127,9 +204,11 @@ Ship each phase visible before starting the next. One step, see it, next.
 
 Multichain · Ledger/WebUSB signing · social login or username+password (magic link
 only) · partial "pay until balance runs out" (atomic disperse makes it moot) ·
-multi-wallet source · roles / multi-user within an agency · cross-device sync (data is
-per-device by design; that's a privacy feature, not a bug) · analytics dashboards ·
-any server-side storage of the roster.
+multi-wallet source · roles / multi-user within an agency · cross-device **roster**
+sync (the roster is per-device by design — a privacy feature, not a bug; account and
+subscription state do live server-side, but the roster never does) · analytics
+dashboards · any server-side storage of the **roster** (encrypted account PII lives
+server-side; the roster does not).
 
 If you think you need one of these, you don't — flag it to the owner first.
 
@@ -138,8 +217,40 @@ If you think you need one of these, you don't — flag it to the owner first.
 ## CODE CONVENTIONS
 
 - TypeScript strict. Prefer clarity over cleverness.
-- Keep the sensitive logic (roster, addresses, amounts, batch build) fully client-side.
+- **Keep the roster client-side.** The roster, addresses, amounts, and batch build stay
+  fully client-side (Dexie/IndexedDB). Only encrypted account PII, OFAC screening, and
+  subscription gating run server-side — and server code must never receive the roster
+  in readable form.
+- **Secrets stay server-side.** API keys, the OFAC feed, and service credentials live
+  server-side only, never bundled into client code. PII columns use pgcrypto (AES-256);
+  wallet addresses are salted-hashed before any persistence.
+- **Zero-drift migration.** During the Vite → Next.js port, design tokens, Tailwind
+  classes, layout, and copy do not change — the ported app is 1:1 with the current
+  build. Improvements wait for a dedicated post-migration pass.
 - Small, composable components. The table is the heart — keep its state clean.
-- Don't add dependencies without reason. shadcn covers the UI; Dexie covers storage;
-  tronweb covers chain. Reach for a new lib only when those genuinely can't do it.
+- Don't add dependencies without reason. shadcn covers the UI; Dexie covers the
+  device-local roster; Supabase covers account/compliance storage; tronweb covers
+  chain. Reach for a new lib only when those genuinely can't do it.
 - Never use `localStorage`/`sessionStorage` for the roster — use Dexie/IndexedDB.
+- **Write a descriptive `sprint_report.txt` after every major task** (what changed,
+  decisions, guardrails honored, blockers, verification).
+
+---
+
+## PENDING POST-MIGRATION RECONCILIATION
+
+Deliberate, temporary divergence: the **governance facts above are the source of truth
+now**, but the **live app copy is frozen** during the migration (zero drift). These
+lines still reflect the old model and must be reconciled in a dedicated copy pass
+**after** the Next.js port is verified 1:1 — not before:
+
+- `src/components/landing/Hero.tsx` — "Your data never leaves your machine" → the
+  dissociation story (roster stays local; account PII stored encrypted).
+- `src/components/landing/content.tsx` (privacy FAQ) — "we don't store it" → same.
+- `src/components/landing/PricingSection.tsx` — €249 / €2,490 (fiat, card-framed) →
+  250 / 2,500 USDT, on-chain.
+- Sweep the other device-local assertions in that pass: `EmptyRoster.tsx`,
+  `lib/db.ts`, `lib/receipts.ts`, `lib/tron/validation.ts`.
+
+Until that pass runs, **all copy is frozen**. Auditors flag these as pending; they do
+not edit them.

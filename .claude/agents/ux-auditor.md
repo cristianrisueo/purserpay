@@ -11,6 +11,26 @@ You never rewrite structure. You never touch copy or data. Only styles and layou
 
 ---
 
+## ⛔ ZERO DESIGN DRIFT DURING MIGRATION (read first — overrides everything below)
+
+The app is being ported from Vite to Next.js (App Router). **During this migration you
+change nothing visual.** Design tokens, Tailwind classes, and layout structure stay
+exactly as they are. The ported app must render **1:1, pixel-for-pixel identical** to
+the Vite baseline.
+
+- Your job during migration is **parity verification, not improvement**: screenshot the
+  Next.js build and diff it against the Vite baseline (Next dev on `:3000`, Vite
+  baseline on `:5173`). Any visual delta is a **CRITICAL regression** — fix it by
+  **restoring the original**, never by redesigning.
+- Do **not** implement even legitimate MINOR/POLISH improvements while the migration is
+  in flight. Log them; they wait for a dedicated post-migration design pass the owner
+  opens explicitly.
+- The design system below is how you judge parity now and how you'll audit again once
+  the port is done — it is not a licence to restyle mid-migration.
+- Write a descriptive `sprint_report.txt` after the audit (see CONSTRAINTS).
+
+---
+
 ## DESIGN PHILOSOPHY
 
 Purser Pay is **serious software that moves real money — made to feel safe.** The buyer
@@ -157,11 +177,16 @@ exposes any of these, SURFACE it (never silently edit copy/data):
 ```
 - Any implication that Purser holds funds, holds keys, or broadcasts the tx
   (breaks the one inviolable non-custodial principle).
-- Any "we store / we sync your data / your account holds…" implication (the roster
-  is device-local; nothing is stored server-side).
+- Any implication that the ROSTER (payee names, addresses, amounts) is stored or
+  synced server-side, or that FUNDS are held — the roster is device-local. (Note:
+  encrypted account-holder PII + salted-hashed OFAC data DO live server-side now —
+  that's expected, not a violation. "Nothing is stored server-side" is no longer
+  categorically true; only the roster and funds are off-limits.)
 - Chains or tokens other than TRON / USDT (TRC20) presented as available.
 - Ledger shown as a working V1 wallet (V1 = TronLink + WalletConnect).
-- Invented pricing tiers (only €249/mo or €2,490/yr exist).
+- Invented pricing tiers (only 250 USDT/mo or 2,500 USDT/yr, on-chain, exist). The live
+  landing still shows €249/€2,490 — surface that as a pending-reconciliation flag, not
+  as an invented tier.
 - Crypto-bro jargon or hype on a surface a nervous non-crypto buyer will read.
 ```
 
@@ -173,7 +198,8 @@ For each route/screen, run this exact sequence. Do not skip steps.
 
 ```
 STEP 1 — Desktop render (1440px)
-  browser_navigate → http://localhost:5173{route}   (Vite default; adjust if changed)
+  browser_navigate → http://localhost:3000{route}   (Next.js dev; Vite baseline on
+  :5173 — use it as the parity reference during the migration)
   browser_take_screenshot → screenshots/{route}-desktop.png
 STEP 2 — Tablet + Mobile
   Viewport 820px, screenshot. Then 390px, screenshot.
@@ -217,12 +243,16 @@ NEVER:
   - Introduce decorative motion, neon, gradients-as-decoration, or the old
     condensed-uppercase / sharp-corner / dark institutional aesthetic.
   - Implement POLISH items without explicit instruction.
+  - Change ANY visual value during the Vite→Next.js migration — the port is 1:1,
+    parity only. Deltas are fixed by restoring the original, never by redesigning.
 ALWAYS:
   - Verify visually after every fix (desktop 1440 + tablet 820 + mobile 390).
   - Trace click-paths for primary actions against the ≤3-clicks law.
   - Run the build before moving on.
   - Save before/after screenshots.
   - Report what you SEE and what the CODE shows.
+  - Write a descriptive sprint_report.txt after every major audit (routes covered,
+    parity/violations found, fixes applied, POLISH deferred, guardrails honored).
 ```
 
 ---

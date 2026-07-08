@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Section } from "./Section"
@@ -58,7 +58,7 @@ export function PricingSection() {
             asChild
             className="mt-6 h-auto w-full rounded-[11px] py-4 text-[15.5px] font-semibold shadow-[0_10px_26px_-14px_rgba(15,181,201,0.55)]"
           >
-            <Link to="/dashboard">Get started</Link>
+            <Link href="/dashboard">Get started</Link>
           </Button>
           <p className="mt-3.5 text-center text-[12.5px] text-muted-foreground">
             Cancel anytime · Your keys never leave you

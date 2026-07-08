@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import Link from "next/link"
 import { TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -31,7 +31,7 @@ export function DashboardHeader({
     <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-[1160px] items-center justify-between gap-4 px-6 py-3.5 md:px-8">
         <Link
-          to="/"
+          href="/"
           className="text-[18px] font-bold tracking-[-0.02em] text-foreground"
         >
           Purser<span className="text-primary">Pay</span>

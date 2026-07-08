@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Eyebrow } from "./Eyebrow"
@@ -31,7 +31,7 @@ export function Hero() {
               asChild
               className="h-auto rounded-[11px] px-[26px] py-[15px] text-[16px] font-semibold shadow-[0_1px_2px_rgba(17,16,20,0.06),0_10px_26px_-14px_rgba(15,181,201,0.55)]"
             >
-              <Link to="/dashboard">Get started</Link>
+              <Link href="/dashboard">Get started</Link>
             </Button>
             <a
               href="#how"

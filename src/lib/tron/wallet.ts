@@ -115,7 +115,7 @@ const walletConnectProvider: WalletProvider = {
   id: "walletconnect",
   label: "WalletConnect",
   isAvailable() {
-    return Boolean(import.meta.env.VITE_WC_PROJECT_ID)
+    return Boolean(process.env.NEXT_PUBLIC_WC_PROJECT_ID)
   },
   async connect() {
     throw new PurserError(

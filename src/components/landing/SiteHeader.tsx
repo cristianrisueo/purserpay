@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 
@@ -30,7 +30,7 @@ export function SiteHeader() {
             </a>
           ))}
           <Link
-            to="/dashboard"
+            href="/dashboard"
             className="text-[14.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             Log in
@@ -39,7 +39,7 @@ export function SiteHeader() {
             asChild
             className="h-auto rounded-[10px] px-[18px] py-2.5 text-[14.5px] font-semibold shadow-[0_1px_2px_rgba(17,16,20,0.08)]"
           >
-            <Link to="/dashboard">Get started</Link>
+            <Link href="/dashboard">Get started</Link>
           </Button>
         </nav>
       </div>

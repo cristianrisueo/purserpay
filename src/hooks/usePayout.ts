@@ -1,3 +1,5 @@
+"use client"
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { RowSelectionState } from "@tanstack/react-table"
 import { useLiveQuery } from "dexie-react-hooks"

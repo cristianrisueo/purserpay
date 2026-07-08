@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Section } from "./Section"
@@ -19,7 +19,7 @@ export function FinalCta() {
         asChild
         className="h-auto rounded-[12px] px-8 py-[17px] text-[16px] font-semibold shadow-[0_12px_30px_-14px_rgba(15,181,201,0.6)]"
       >
-        <Link to="/dashboard">Get started</Link>
+        <Link href="/dashboard">Get started</Link>
       </Button>
     </Section>
   )

@@ -56,7 +56,7 @@ db.version(2).stores({
   meta: "key",
 })
 
-if (import.meta.env.DEV) {
+if (process.env.NODE_ENV !== "production") {
   // Lets devtools/testing seed or inspect the roster directly, without a
   // user-facing "load sample data" feature that would inject fake rows into
   // what's now the user's real, private data.

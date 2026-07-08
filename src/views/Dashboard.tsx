@@ -1,3 +1,5 @@
+"use client"
+
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { EmptyRoster } from "@/components/dashboard/EmptyRoster"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
