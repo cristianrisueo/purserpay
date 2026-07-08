@@ -105,7 +105,7 @@ export function PayeeFormDialog({
               id="payee-role"
               value={role}
               onChange={(e) => setRole(e.target.value)}
-              placeholder="model"
+              placeholder="editor"
             />
           </div>
 

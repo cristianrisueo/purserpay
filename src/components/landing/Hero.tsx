@@ -12,7 +12,7 @@ export function Hero() {
     >
       <div className="grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] items-center gap-[clamp(40px,5vw,72px)]">
         <div>
-          <Eyebrow className="mb-[22px]">non-custodial payouts for agencies</Eyebrow>
+          <Eyebrow className="mb-[22px]">non-custodial payouts for distributed teams</Eyebrow>
           <h1 className="mb-[22px] text-[clamp(2.5rem,5.6vw,4.3rem)] font-bold leading-[1.02] tracking-[-0.03em] text-foreground">
             Pay everyone in <span className="text-primary">one transfer.</span>
           </h1>

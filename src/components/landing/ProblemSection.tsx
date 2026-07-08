@@ -11,7 +11,7 @@ export function ProblemSection() {
         <span className="text-primary">nerve-wracking</span> hour of your month.
       </h2>
       <p className="mb-[clamp(38px,5vw,56px)] max-w-[52ch] text-[17px] leading-[1.6] text-muted-foreground">
-        You run an agency, not a treasury desk. Yet every month you become the
+        You run a business, not a treasury desk. Yet every month you become the
         accountant, the data-entry clerk, and the last line of defence — all before
         a single person is paid.
       </p>

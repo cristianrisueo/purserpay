@@ -14,11 +14,11 @@ export type Recipient = {
 export const demoTotal = "$7,440"
 
 export const demoRecipients: Recipient[] = [
-  { name: "Luna", role: "Model", wallet: "TR7NHq…9kX2", amount: "$2,940" },
-  { name: "Dayshift team", role: "Chat", wallet: "TJmWv3…4pQ8", amount: "$1,600" },
-  { name: "Nightshift", role: "Chat", wallet: "TWd1Kp…7bL5", amount: "$1,450" },
-  { name: "Marco", role: "Edit", wallet: "TQ5rYz…2nH9", amount: "$800" },
-  { name: "Priya", role: "VA", wallet: "TP8xLm…6cR3", amount: "$650" },
+  { name: "Luna", role: "Lead", wallet: "TR7NHq…9kX2", amount: "$2,940" },
+  { name: "Dayshift team", role: "Support", wallet: "TJmWv3…4pQ8", amount: "$1,600" },
+  { name: "Nightshift", role: "Support", wallet: "TWd1Kp…7bL5", amount: "$1,450" },
+  { name: "Marco", role: "Editor", wallet: "TQ5rYz…2nH9", amount: "$800" },
+  { name: "Priya", role: "Ops", wallet: "TP8xLm…6cR3", amount: "$650" },
 ]
 
 export type Problem = { n: string; title: string; body: string }
@@ -32,7 +32,7 @@ export const problems: Problem[] = [
   {
     n: "02",
     title: "The split math",
-    body: "Seventy-thirty splits, bonuses, chargebacks, the one chatter on a bespoke rate. All reconciled by hand, usually late, usually tired.",
+    body: "Seventy-thirty splits, bonuses, chargebacks, the one contractor on a bespoke rate. All reconciled by hand, usually late, usually tired.",
   },
   {
     n: "03",
@@ -175,7 +175,7 @@ export const faqs: Faq[] = [
   },
   {
     q: "Which chains and tokens?",
-    a: "TRON / USDT (TRC20) today — the rail agencies actually use to pay their teams. More are on the roadmap, but we began with the one that matters to you.",
+    a: "TRON / USDT (TRC20) — the rail these teams are already paid on, and the one that matters to you. It's what we support today.",
   },
   {
     q: "Is my team's data private?",

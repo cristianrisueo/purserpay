@@ -1,15 +1,24 @@
 # Purser Pay — Project Context (CLAUDE.md)
 
-Purser Pay is a **non-custodial USDT payout tool** for OnlyFans/Fansly management
-agencies ("OFM agencies"). They pay their team — models, chatters, editors, remote
-staff — in USDT on TRON, because banks and PayPal/Wise/Deel shut down adult-adjacent
-accounts. Today they do it by hand: messy spreadsheets, manual commission-split math,
-copy-pasting wallet addresses one at a time, terrified of a typo.
+Purser Pay is a **non-custodial, no-KYC USDT payout tool** for de-banked businesses
+that pay a distributed team — remote staff, contractors, freelancers — in USDT on
+TRON, because banks and PayPal/Wise/Deel shut down their accounts for operating in
+gray-area or adult-adjacent industries. Today they do it by hand: messy spreadsheets,
+manual commission-split math, copy-pasting wallet addresses one at a time, terrified
+of a typo.
 
 Purser reads their team, validates every address, computes splits, and compiles an
-**unsigned batch transaction** the agency signs with their **own** wallet. The money
-goes straight from the agency's wallet to their team. **Purser never touches funds,
+**unsigned batch transaction** the business signs with their **own** wallet. The
+money goes straight from their wallet to their team. **Purser never touches funds,
 keys, or transaction propagation.**
+
+**Public narrative vs. distribution channel:** the public brand, landing page, and
+app copy are vertical-agnostic — never name "OnlyFans," "OFM," or any specific
+industry. Copy speaks to the pain (de-banked, distributed team, fat-finger fear,
+privacy, one signature), not the vertical. This does NOT change go-to-market: cold
+outreach and demos still target OFM (OnlyFans/Fansly management) agencies
+specifically — OFM remains the primary **distribution channel**, just not the public
+brand.
 
 ---
 
