@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 
 // Landing copy & demo data — single source of truth for the marketing page.
-// Lifted verbatim from design-reference/Purser Pay Landing.html (English).
+// Lifted verbatim from design-reference/PurserPay Landing.html (English).
 // Kept here so copy-auditor can review all landing copy in one place.
 
 export type Recipient = {

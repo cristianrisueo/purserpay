@@ -36,7 +36,7 @@
 :root {
     --radius: 0.75rem;
 
-    /* Purser Pay brand palette — single source of truth (see CLAUDE.md) */
+    /* PurserPay brand palette — single source of truth (see CLAUDE.md) */
     --brand-accent: #0FB5C9;
     --bg: #FAF9F7;
     --surface: #FFFFFF;

@@ -1,6 +1,6 @@
-# Purser Pay — Project Context (CLAUDE.md)
+# PurserPay — Project Context (CLAUDE.md)
 
-Purser Pay is a **non-custodial, no-KYC USDT payout tool** for de-banked businesses
+PurserPay is a **non-custodial, no-KYC USDT payout tool** for de-banked businesses
 that pay a distributed team — remote staff, contractors, freelancers — in USDT on
 TRON, because banks and PayPal/Wise/Deel shut down their accounts for operating in
 gray-area or adult-adjacent industries. Today they do it by hand: messy spreadsheets,

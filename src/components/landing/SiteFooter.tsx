@@ -59,7 +59,7 @@ export function SiteFooter() {
 
         <div className="flex flex-wrap justify-between gap-4">
           <span className="font-mono text-[11px] text-[#93908A]">
-            © 2026 Purser Pay · Non-custodial. You sign. You hold the keys.
+            © 2026 PurserPay · Non-custodial. You sign. You hold the keys.
           </span>
           <span className="font-mono text-[11px] text-[#93908A]">
             TRON · USDT (TRC20)

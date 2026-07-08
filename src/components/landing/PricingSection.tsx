@@ -29,7 +29,7 @@ export function PricingSection() {
 
         <div className="rounded-xl border border-border bg-card p-[clamp(32px,4vw,42px)] shadow-[0_1px_2px_rgba(17,16,20,0.04),0_30px_60px_-38px_rgba(17,16,20,0.3)]">
           <span className="font-mono text-[11px] tracking-[0.1em] text-muted-foreground">
-            purser pay · everything included
+            PurserPay · everything included
           </span>
           <div className="mt-[18px] mb-1 flex items-baseline gap-2.5">
             <span className="text-[clamp(3rem,6vw,3.9rem)] font-bold leading-[0.9] tracking-[-0.03em] text-foreground">

@@ -16,7 +16,7 @@ interface ITRC20 {
 
 /**
  * @title  PurserPay
- * @notice Non-custodial USDT payout + subscription contract for Purser Pay.
+ * @notice Non-custodial USDT payout + subscription contract for PurserPay.
  *
  *         Two functions, and the contract holds nothing:
  *           - disperse(): a FREE batch-payout utility. USDT moves straight from the
@@ -64,22 +64,12 @@ contract PurserPay {
     // -------------------------------------------------------------------------
 
     /// @notice Emitted once per successful subscription payment.
-    event SubscriptionPaid(
-        address indexed subscriber,
-        uint256 amount,
-        uint256 timestamp,
-        uint256 expirationTime
-    );
+    event SubscriptionPaid(address indexed subscriber, uint256 amount, uint256 timestamp, uint256 expirationTime);
 
     /// @notice Emitted once per successful batch. Per-recipient traceability is left
     ///         to the token's own Transfer events. Signature preserved from the prior
     ///         PurseDisperseUsdt contract so existing consumers keep decoding it.
-    event Dispersed(
-        address indexed payer,
-        address indexed token,
-        uint256 recipientCount,
-        uint256 totalAmount
-    );
+    event Dispersed(address indexed payer, address indexed token, uint256 recipientCount, uint256 totalAmount);
 
     // -------------------------------------------------------------------------
     // Errors (disperse-guard signatures preserved from PurseDisperseUsdt —
@@ -154,11 +144,7 @@ contract PurserPay {
      * @param recipients Payee addresses; must be non-zero and length-matched to `amounts`.
      * @param amounts    Base-unit amounts (6-dp for USDT); each must be non-zero.
      */
-    function disperse(
-        address token,
-        address[] calldata recipients,
-        uint256[] calldata amounts
-    ) external {
+    function disperse(address token, address[] calldata recipients, uint256[] calldata amounts) external {
         uint256 len = recipients.length;
 
         if (len != amounts.length) {

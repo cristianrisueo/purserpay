@@ -6,8 +6,8 @@ import type { Metadata, Viewport } from "next"
 import "@/styles/globals.css"
 
 export const metadata: Metadata = {
-  title: "Purser Pay",
-  icons: { icon: "/vite.svg" },
+  title: "PurserPay | On-Chain Payouts",
+  icons: { icon: "/favicon.svg" },
 }
 
 export const viewport: Viewport = {

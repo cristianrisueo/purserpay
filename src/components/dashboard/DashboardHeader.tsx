@@ -34,7 +34,7 @@ export function DashboardHeader({
           href="/"
           className="text-[18px] font-bold tracking-[-0.02em] text-foreground"
         >
-          Purser<span className="text-primary">Pay</span>
+          Purser <span className="text-primary">Pay</span>
         </Link>
 
         {connected && account ? (

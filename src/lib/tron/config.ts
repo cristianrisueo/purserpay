@@ -36,8 +36,30 @@ export const NETWORK: TronNetwork = {
 //   hostMatch: "api.trongrid", explorer: "https://tronscan.org"
 //   USDT_ADDRESS (real): TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
 
-/** Our ownerless, immutable disperse contract (Nile). */
+/** Our ownerless, immutable disperse contract (Nile). This is the deployed
+ *  PurseDisperseUsdt; disperse still points here so the working money path is
+ *  untouched. */
 export const DISPERSE_ADDRESS = "TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x"
+
+/** Sentinel used until the unified PurserPay contract (disperse + subscribe) is
+ *  deployed. `isPurserPayDeployed()` compares against this — while it is the
+ *  live value the subscription gate is fail-closed: the paywall shows and an
+ *  on-chain subscribe surfaces a calm "not deployed yet" message. It is not a
+ *  valid TRON address on purpose. */
+export const PENDING_DEPLOYMENT_ADDRESS = "T_PENDING_DEPLOYMENT_ADDRESS"
+
+/** The PurserPay contract that carries the on-chain subscription (subscribe /
+ *  isSubscriptionActive). NOT deployed yet — placeholder until then. At deploy,
+ *  set this AND `DISPERSE_ADDRESS` to the one unified PurserPay address (the
+ *  same contract serves both disperse and subscribe). */
+export const PURSERPAY_ADDRESS = PENDING_DEPLOYMENT_ADDRESS
+
+/** The flat subscription price in USDT base units (6 decimals). Matches the
+ *  immutable contract constant `SUBSCRIPTION_PRICE = 250 * 10**6`. */
+export const SUBSCRIPTION_PRICE_UNITS = 250_000_000n
+
+/** The subscription price in whole USDT, for display (e.g. the paywall button). */
+export const SUBSCRIPTION_PRICE_USDT = 250
 
 /** The USDT token. On Nile this is our MockUsdtTrc20 (6 decimals, same shape as
  *  real USDT-TRC20). Mainnet swaps this for Tether's real contract. */

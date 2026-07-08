@@ -2,8 +2,10 @@
 
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { EmptyRoster } from "@/components/dashboard/EmptyRoster"
+import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
+import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { usePayout } from "@/hooks/usePayout"
 
 export function Dashboard() {
@@ -90,6 +92,21 @@ export function Dashboard() {
           </>
         )}
       </main>
+
+      {/* Compliance gates — the paywall and the OFAC block. Both are driven by
+          usePayout state and only ever open from the payout flow. */}
+      <SubscribeDialog
+        open={payout.paywallOpen}
+        onOpenChange={payout.setPaywallOpen}
+        onSubscribe={payout.subscribe}
+        phase={payout.subscribePhase}
+        error={payout.subscribeError}
+        networkName={payout.networkName}
+      />
+      <OfacBlockedDialog
+        flagged={payout.ofacFlagged}
+        onDismiss={payout.dismissOfac}
+      />
     </div>
   )
 }

@@ -1,0 +1,10 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Bóveda Exterior Estilizada -->
+  <rect x="2" y="2" width="28" height="28" rx="4" stroke="#00F0FF" strokeWidth="2" />
+  
+  <!-- Núcleo del Purser -->
+  <path d="M11 9V23M11 9H19C22.5 9 22.5 15 19 15H11" stroke="#00F0FF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+  
+  <!-- Flujo de Liquidación -->
+  <path d="M14 19H19" stroke="#00F0FF" strokeWidth="1.5" strokeLinecap="round" opacity="0.8" />
+</svg>

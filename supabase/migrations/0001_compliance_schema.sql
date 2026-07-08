@@ -1,5 +1,5 @@
 -- ============================================================================
--- Purser Pay — 0001_compliance_schema
+-- PurserPay — 0001_compliance_schema
 -- GDPR / OFAC "Data Dissociation" schema.
 --
 -- Two tiers of compliance data, and nothing readable is stored:

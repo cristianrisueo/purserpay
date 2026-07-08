@@ -1,4 +1,4 @@
-import { DISPERSE_ABI, ERC20_ABI } from "./abi"
+import { ERC20_ABI, PURSERPAY_ABI } from "./abi"
 import type { InjectedTronWeb } from "./client"
 import { getInjectedTronWeb } from "./client"
 import {
@@ -28,16 +28,19 @@ import {
 // structurally impossible here.
 
 /** The tronweb .contract() abi param type, derived from the instance so we
- *  don't couple to tronweb's internal type paths. */
-type ContractAbiParam = Parameters<InjectedTronWeb["contract"]>[0]
+ *  don't couple to tronweb's internal type paths. Exported so subscription.ts
+ *  binds PurserPay the same way. */
+export type ContractAbiParam = Parameters<InjectedTronWeb["contract"]>[0]
 
-const APPROVE_FEE_LIMIT_SUN = FEE_FLOOR_SUN // approve is cheap; 50 TRX ceiling.
+/** Approve is cheap; 50 TRX ceiling. Reused by the subscription approve. */
+export const APPROVE_FEE_LIMIT_SUN = FEE_FLOOR_SUN
 const RECEIPT_POLL_TRIES = 40
 const RECEIPT_POLL_MS = 2_000
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-function toBig(v: unknown): bigint {
+/** Normalize tronweb's varied numeric return shapes to a bigint. */
+export function toBig(v: unknown): bigint {
   if (typeof v === "bigint") return v
   if (typeof v === "number") return BigInt(Math.trunc(v))
   if (typeof v === "string") return BigInt(v)
@@ -47,17 +50,19 @@ function toBig(v: unknown): bigint {
   return 0n
 }
 
-function requireWallet(): InjectedTronWeb {
+export function requireWallet(): InjectedTronWeb {
   const tw = getInjectedTronWeb()
   if (!tw || !tw.defaultAddress?.base58) throw noWallet()
   return tw
 }
 
-function erc20(tw: InjectedTronWeb) {
+/** USDT (TRC20) contract bound to the injected wallet. Reused for the
+ *  subscription approve, whose spender is the PurserPay contract. */
+export function erc20(tw: InjectedTronWeb) {
   return tw.contract(ERC20_ABI as ContractAbiParam, USDT_ADDRESS)
 }
 function disperseContract(tw: InjectedTronWeb) {
-  return tw.contract(DISPERSE_ABI as ContractAbiParam, DISPERSE_ADDRESS)
+  return tw.contract(PURSERPAY_ABI as ContractAbiParam, DISPERSE_ADDRESS)
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -94,11 +99,13 @@ export async function getAllowance(operator: string): Promise<bigint> {
 
 // --- Receipt polling ---------------------------------------------------------
 
-type Receipt = { result: string; contractResult?: string[] }
+export type Receipt = { result: string; contractResult?: string[] }
 
 /** Poll until the tx is mined, then return its normalized result. TRON omits
- *  `receipt.result` on a plain success, so absence == SUCCESS once mined. */
-async function waitForReceipt(
+ *  `receipt.result` on a plain success, so absence == SUCCESS once mined.
+ *  Exported so the subscription flow confirms its approve/subscribe txs the
+ *  same way. */
+export async function waitForReceipt(
   tw: InjectedTronWeb,
   txid: string,
   signal?: AbortSignal

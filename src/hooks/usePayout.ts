@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { RowSelectionState } from "@tanstack/react-table"
 import { useLiveQuery } from "dexie-react-hooks"
 
+import { storeBillingProfile, verifyRosterCompliance } from "@/app/actions/compliance"
 import { db } from "@/lib/db"
 import type { PayeeInput } from "@/lib/payeeValidation"
 import {
@@ -30,7 +31,11 @@ import {
   runDisperse,
   type DisperseRow,
 } from "@/lib/tron/disperse"
-import { humanize, type PurserError } from "@/lib/tron/errors"
+import { humanize, PurserError } from "@/lib/tron/errors"
+import {
+  getSubscriptionStatus,
+  runSubscribe,
+} from "@/lib/tron/subscription"
 import {
   structuralLevels,
   verifyAddresses,
@@ -55,6 +60,18 @@ export type BatchPhase =
   | { kind: "approving" }
   | { kind: "signing"; index: number; total: number }
   | { kind: "confirming"; index: number; total: number }
+
+/** The Subscribe flow's progress, for the paywall's button label. */
+export type SubscribePhase =
+  | "idle"
+  | "storing"
+  | "approving"
+  | "signing"
+  | "confirming"
+
+/** The account holder's PII collected by the paywall. Sent straight to the
+ *  server action and NEVER persisted client-side (no Dexie, no localStorage). */
+export type BillingPii = { name: string; country: string; taxId: string }
 
 function fmtBalance(units: bigint | null): number | null {
   if (units == null) return null
@@ -298,11 +315,59 @@ export function usePayout() {
   const [payError, setPayError] = useState<PurserError | null>(null)
   const paying = batchPhase.kind !== "idle"
 
+  // --- Subscription gate + OFAC screening ---------------------------------
+  // The subscription is a FRONTEND paywall (disperse() is free on-chain); OFAC
+  // screening runs server-side before any signature. Both are enforced inside
+  // runPayment below, the single choke-point for every payout.
+  const [subscriptionActive, setSubscriptionActive] = useState<boolean | null>(
+    null
+  )
+  const [subscriptionChecking, setSubscriptionChecking] = useState(false)
+  const [paywallOpen, setPaywallOpen] = useState(false)
+  const [subscribePhase, setSubscribePhase] = useState<SubscribePhase>("idle")
+  const [subscribeError, setSubscribeError] = useState<PurserError | null>(null)
+  const [screening, setScreening] = useState(false)
+  const [ofacFlagged, setOfacFlagged] = useState<string[] | null>(null)
+
+  const refreshSubscription = useCallback(async (address: string) => {
+    try {
+      const s = await getSubscriptionStatus(address)
+      setSubscriptionActive(s.active)
+    } catch {
+      setSubscriptionActive(false) // fail closed
+    }
+  }, [])
+
+  // Read the on-chain subscription whenever a wallet is connected on the right
+  // network. Fail-closed: any read failure leaves the gate "not active".
+  useEffect(() => {
+    if (!account || wrongNetwork) {
+      setSubscriptionActive(null)
+      return
+    }
+    let cancelled = false
+    setSubscriptionChecking(true)
+    getSubscriptionStatus(account.address)
+      .then((s) => {
+        if (!cancelled) setSubscriptionActive(s.active)
+      })
+      .catch(() => {
+        if (!cancelled) setSubscriptionActive(false)
+      })
+      .finally(() => {
+        if (!cancelled) setSubscriptionChecking(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [account, wrongNetwork])
+
   // Rule 5 — never enable a pay that would revert or silently skip anyone.
   const canPayAll =
     connected &&
     !wrongNetwork &&
     !paying &&
+    !screening &&
     payable.length > 0 &&
     blockedCount === 0 &&
     shortfallUnits <= 0n
@@ -310,7 +375,42 @@ export function usePayout() {
   const runPayment = useCallback(
     async (rows: Payee[]) => {
       if (!account || rows.length === 0) return
+
+      // Gate 1 — subscription (a frontend paywall). Without a confirmed-active
+      // subscription, open the Subscribe dialog and stop: nothing is signed.
+      // Fail-closed — anything but `true` (unknown / inactive / unreadable)
+      // routes to the paywall, so the gate can never silently open.
+      if (subscriptionActive !== true) {
+        setPaywallOpen(true)
+        return
+      }
+
       setPayError(null)
+
+      // Gate 2 — OFAC. Screen every recipient server-side before any signature.
+      // A hit blocks the whole batch (atomic — never a partial workaround); a
+      // throw fails CLOSED, because an unverifiable roster must never look clean.
+      try {
+        setScreening(true)
+        const flagged = await verifyRosterCompliance(rows.map((r) => r.address))
+        if (flagged.length > 0) {
+          setOfacFlagged(flagged)
+          return
+        }
+      } catch (e) {
+        setPayError(
+          new PurserError(
+            "unknown",
+            "Couldn't screen recipients against the sanctions list — nothing was sent. Try again in a moment.",
+            e instanceof Error ? e.message : String(e)
+          )
+        )
+        return
+      } finally {
+        setScreening(false)
+      }
+
+      // Gate 3 — disperse. Only reached when subscribed AND the roster is clean.
       const disperseRows: DisperseRow[] = rows.map((p) => ({
         id: p.id,
         address: p.address,
@@ -345,7 +445,7 @@ export function usePayout() {
         void refreshBalance(account.address)
       }
     },
-    [account, refreshBalance]
+    [account, subscriptionActive, refreshBalance]
   )
 
   const payAll = useCallback(() => {
@@ -355,7 +455,7 @@ export function usePayout() {
 
   const payRow = useCallback(
     (id: string) => {
-      if (!connected || wrongNetwork || paying) return
+      if (!connected || wrongNetwork || paying || screening) return
       const p = roster.find((r) => r.id === id)
       if (!p || paidIds.has(id) || rowBlocked.has(id)) return
       // Single-row balance guard.
@@ -366,8 +466,39 @@ export function usePayout() {
       }
       void runPayment([p])
     },
-    [connected, wrongNetwork, paying, roster, paidIds, rowBlocked, balanceUnits, runPayment]
+    [connected, wrongNetwork, paying, screening, roster, paidIds, rowBlocked, balanceUnits, runPayment]
   )
+
+  // --- Subscription action -------------------------------------------------
+  const subscribe = useCallback(
+    async (pii: BillingPii) => {
+      if (!account) return
+      setSubscribeError(null)
+      try {
+        // 1) Persist the PII server-side, encrypted, keyed by a dissociated
+        //    wallet hash. It goes straight to the server action — never Dexie,
+        //    never localStorage.
+        setSubscribePhase("storing")
+        await storeBillingProfile(account.address, JSON.stringify(pii))
+        // 2) Pay the subscription on-chain from the user's OWN wallet.
+        await runSubscribe(account.address, {
+          onApproveStart: () => setSubscribePhase("approving"),
+          onSigning: () => setSubscribePhase("signing"),
+          onConfirming: () => setSubscribePhase("confirming"),
+        })
+        // 3) Re-read the gate → active → close the paywall.
+        await refreshSubscription(account.address)
+        setPaywallOpen(false)
+      } catch (e) {
+        setSubscribeError(humanize(e))
+      } finally {
+        setSubscribePhase("idle")
+      }
+    },
+    [account, refreshSubscription]
+  )
+
+  const dismissOfac = useCallback(() => setOfacFlagged(null), [])
 
   const reset = useCallback(async () => {
     // Advance the green cycle (keeps receipts) and clear session tx state.
@@ -460,12 +591,23 @@ export function usePayout() {
     allSelectedPaid,
     anyPaid,
     canPayAll,
+    // subscription gate + OFAC
+    subscriptionActive,
+    subscriptionChecking,
+    screening,
+    paywallOpen,
+    setPaywallOpen,
+    subscribePhase,
+    subscribeError,
+    ofacFlagged,
     // actions
     connect,
     disconnect,
     reset,
     payRow,
     payAll,
+    subscribe,
+    dismissOfac,
     addPayee,
     updatePayee,
     removePayee,
