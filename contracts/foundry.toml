@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+
+# Compiler pinned to match the audited/deployed toolchain.
+solc = "0.8.20"
+optimizer = true
+optimizer_runs = 200
+
+# TRON TVM does NOT support the PUSH0 opcode. solc 0.8.20 defaults to the
+# "shanghai" EVM target, which emits PUSH0 — that bytecode reverts on TRON.
+# "istanbul" is the last pre-PUSH0 target and is what the original solc-js
+# pipeline used; keep it so the compiled bytecode runs on TRON's TVM.
+evm_version = "istanbul"
+
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

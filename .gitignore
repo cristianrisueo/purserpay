@@ -27,6 +27,15 @@ dist-ssr
 next-env.d.ts
 *.tsbuildinfo
 
+# Foundry (contracts/) — generated / re-derivable output, not wanted on GitHub.
+# Only the source (src/, test/, foundry.toml) is tracked; everything below is
+# rebuilt by `forge build` / `forge install`.
+# (.gitignore has no inline comments — keep notes on their own lines.)
+/contracts/out/
+/contracts/cache/
+/contracts/lib/
+/contracts/broadcast/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
