@@ -51,9 +51,10 @@ If a task ever seems to require holding funds/keys, broadcasting on the client's
 behalf, storing the **roster** server-side, or storing **readable** PII — STOP and
 flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
 
-> Note: the live public copy still says "your data never leaves your machine" and "we
-> don't store it." Those lines are **frozen** during the migration and flagged for a
-> post-migration copy pass — see **Pending Post-Migration Reconciliation** at the end.
+> Note: the landing copy has been reconciled to the dissociation story — it now says the
+> **money never leaves your wallet** and the **roster never leaves your device**, not the
+> old absolute "your data never leaves your machine." Remaining non-landing assertions
+> are still queued — see **Pending Post-Migration Reconciliation** at the end.
 
 ---
 
@@ -66,6 +67,18 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
 - **Frontend:** Next.js (App Router) + React + TypeScript, deployed on Vercel (was a
   Vite SPA). Landing at `/`, app at `/dashboard`. Server components, route handlers,
   and Edge middleware carry the server-side logic — hiding API keys, enforcing OFAC.
+  The public landing is a single page — **Why us (`#why`) → How it works (`#how`) →
+  Pricing (`#pricing`) → FAQ** — with a **dynamic 3-state wallet CTA** in the nav
+  (Connect wallet → Activate subscription → Go to dashboard) that reads state via the
+  shared `lib/tron/wallet.ts` + `subscription.ts` and routes the subscribe flow to the
+  dashboard. **How it works** runs Modules 01–03 on one symmetric 50/50 rhythm (copy
+  left, cards/receipt-preview right) with a 16:9 walkthrough slot as 04. The **Pricing**
+  section's own **Subscribe** button is the exception: it subscribes **inline** — connect
+  the wallet if needed, then `runSubscribe` from the user's own wallet (fail-closed with a
+  calm "not deployed yet" until the contract ships). NOTE: only the flat monthly
+  `subscribe()` / 250-USDT path exists on-chain; the Annual tier is selection + display
+  until an annual contract method is added (a contract change — out of V1 scope, flag
+  first). Landing and dashboard stay 100% separated; **design tokens are unchanged**.
 - **UI:** shadcn/ui + Tailwind + Radix. Components copied into the repo (we own them).
 - **Table (the core of the app):** TanStack Table via shadcn data-table.
 - **Persistence — two tiers:**
@@ -244,13 +257,15 @@ now**, but the **live app copy is frozen** during the migration (zero drift). Th
 lines still reflect the old model and must be reconciled in a dedicated copy pass
 **after** the Next.js port is verified 1:1 — not before:
 
-- `src/components/landing/Hero.tsx` — "Your data never leaves your machine" → the
-  dissociation story (roster stays local; account PII stored encrypted).
-- `src/components/landing/content.tsx` (privacy FAQ) — "we don't store it" → same.
-- `src/components/landing/PricingSection.tsx` — €249 / €2,490 (fiat, card-framed) →
-  250 / 2,500 USDT, on-chain.
-- Sweep the other device-local assertions in that pass: `EmptyRoster.tsx`,
-  `lib/db.ts`, `lib/receipts.ts`, `lib/tron/validation.ts`.
+**Reconciled in the landing restructure sprint (done):**
+- `src/components/landing/Hero.tsx` — now "your money never leaves your wallet; your
+  roster never leaves your device" (the dissociation story), replacing the old absolute
+  "Your data never leaves your machine."
+- `src/components/landing/content.tsx` (privacy FAQ) — reconciled to the same
+  device-local roster framing; no blanket "we don't store it."
+- `src/components/landing/PricingSection.tsx` — now **250 / 2,500 USDT, on-chain** (no
+  fiat, no card), replacing €249 / €2,490.
 
-Until that pass runs, **all copy is frozen**. Auditors flag these as pending; they do
-not edit them.
+**Still pending (non-landing — the freeze stands until their own pass):** the
+device-local assertions in `EmptyRoster.tsx`, `lib/db.ts`, `lib/receipts.ts`,
+`lib/tron/validation.ts`. Auditors flag these as pending; they do not edit them.

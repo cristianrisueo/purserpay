@@ -21,10 +21,12 @@ import {
   greenSince as greenSinceOf,
   GREEN_SINCE_META_KEY,
   paidPayeeIds,
+  paymentForPayee,
   txidForPayee,
 } from "@/lib/receipts"
+import { downloadReceiptPdf } from "@/lib/receiptPdf"
 import { isTargetNetwork } from "@/lib/tron/client"
-import { NETWORK } from "@/lib/tron/config"
+import { NETWORK, txExplorerUrl } from "@/lib/tron/config"
 import { toBaseUnits } from "@/lib/tron/amount"
 import {
   getUsdtBalance,
@@ -120,6 +122,9 @@ export function usePayout() {
   const [balanceUnits, setBalanceUnits] = useState<bigint | null>(null)
   const [host, setHost] = useState<string>("")
   const [walletError, setWalletError] = useState<PurserError | null>(null)
+  // True once the mount-time wallet hydrate has run (whether or not it found an
+  // authorized session) — lets the dashboard guard wait before acting on "no wallet".
+  const [walletHydrated, setWalletHydrated] = useState(false)
   const connected = account != null
   const wrongNetwork = connected && host !== "" && !isTargetNetwork(host)
 
@@ -156,6 +161,33 @@ export function usePayout() {
     // On-chain verification levels are cleared by the verify effect once
     // `account` becomes null.
   }, [account])
+
+  // Adopt an already-authorized wallet session on mount (no prompt), so arriving on
+  // the dashboard with a wallet connected earlier (e.g. via the landing CTA) is
+  // recognized without a fresh Connect click — required for the route guard and the
+  // "Go to Dashboard" flow. Deferred to a microtask so the first render isn't mutated
+  // synchronously and the injected wallet has a tick to appear.
+  useEffect(() => {
+    const provider = getWalletProvider("tronlink")
+    let cancelled = false
+    void Promise.resolve().then(() => {
+      if (cancelled) return
+      const addr = provider.getAddress()
+      if (addr) {
+        setAccount({
+          providerId: "tronlink",
+          provider: provider.label,
+          address: addr,
+        })
+        setHost(provider.getProviderHost())
+        void refreshBalance(addr)
+      }
+      setWalletHydrated(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [refreshBalance])
 
   // React to account/network changes coming from the wallet itself.
   useEffect(() => {
@@ -322,6 +354,9 @@ export function usePayout() {
   const [subscriptionActive, setSubscriptionActive] = useState<boolean | null>(
     null
   )
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<
+    number | null
+  >(null)
   const [subscriptionChecking, setSubscriptionChecking] = useState(false)
   const [paywallOpen, setPaywallOpen] = useState(false)
   const [subscribePhase, setSubscribePhase] = useState<SubscribePhase>("idle")
@@ -333,8 +368,10 @@ export function usePayout() {
     try {
       const s = await getSubscriptionStatus(address)
       setSubscriptionActive(s.active)
+      setSubscriptionExpiresAt(s.expiresAt)
     } catch {
       setSubscriptionActive(false) // fail closed
+      setSubscriptionExpiresAt(null)
     }
   }, [])
 
@@ -343,16 +380,23 @@ export function usePayout() {
   useEffect(() => {
     if (!account || wrongNetwork) {
       setSubscriptionActive(null)
+      setSubscriptionExpiresAt(null)
       return
     }
     let cancelled = false
     setSubscriptionChecking(true)
     getSubscriptionStatus(account.address)
       .then((s) => {
-        if (!cancelled) setSubscriptionActive(s.active)
+        if (!cancelled) {
+          setSubscriptionActive(s.active)
+          setSubscriptionExpiresAt(s.expiresAt)
+        }
       })
       .catch(() => {
-        if (!cancelled) setSubscriptionActive(false)
+        if (!cancelled) {
+          setSubscriptionActive(false)
+          setSubscriptionExpiresAt(null)
+        }
       })
       .finally(() => {
         if (!cancelled) setSubscriptionChecking(false)
@@ -480,8 +524,10 @@ export function usePayout() {
         //    never localStorage.
         setSubscribePhase("storing")
         await storeBillingProfile(account.address, JSON.stringify(pii))
-        // 2) Pay the subscription on-chain from the user's OWN wallet.
-        await runSubscribe(account.address, {
+        // 2) Pay the subscription on-chain from the user's OWN wallet. The dashboard
+        //    paywall subscribes on the monthly plan (0); the annual tier is chosen on
+        //    the landing pricing section.
+        await runSubscribe(account.address, 0, {
           onApproveStart: () => setSubscribePhase("approving"),
           onSigning: () => setSubscribePhase("signing"),
           onConfirming: () => setSubscribePhase("confirming"),
@@ -519,6 +565,31 @@ export function usePayout() {
     }
     return m
   }, [roster, sessionTxid, payments, since])
+
+  // --- Receipt download (local print-to-PDF, read-only) -------------------
+  // Finds the batch that paid this row in the current cycle and renders a
+  // downloadable receipt. Purely local: reads IndexedDB, prints; no chain call,
+  // no signing, no funds. Names come from the current roster (falling back to
+  // the address if a payee was later removed).
+  const downloadReceipt = useCallback(
+    (payeeId: string) => {
+      const payment = paymentForPayee(payments, payeeId, since)
+      if (!payment) return
+      const nameById = new Map(roster.map((p) => [p.id, p.name]))
+      downloadReceiptPdf({
+        txid: payment.txid,
+        explorerUrl: txExplorerUrl(payment.txid),
+        networkName: NETWORK.name,
+        timestamp: payment.timestamp,
+        recipients: payment.recipients.map((r) => ({
+          name: nameById.get(r.id) ?? r.address,
+          address: r.address,
+          amount: r.amount,
+        })),
+      })
+    },
+    [payments, since, roster]
+  )
 
   // --- Roster CRUD (unchanged, still Dexie) -------------------------------
   const forgetRow = useCallback((id: string) => {
@@ -563,6 +634,7 @@ export function usePayout() {
     isEmpty,
     // wallet
     connected,
+    walletHydrated,
     wrongNetwork,
     networkName: NETWORK.name,
     walletError,
@@ -593,6 +665,7 @@ export function usePayout() {
     canPayAll,
     // subscription gate + OFAC
     subscriptionActive,
+    subscriptionExpiresAt,
     subscriptionChecking,
     screening,
     paywallOpen,
@@ -606,6 +679,7 @@ export function usePayout() {
     reset,
     payRow,
     payAll,
+    downloadReceipt,
     subscribe,
     dismissOfac,
     addPayee,

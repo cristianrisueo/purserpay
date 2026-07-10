@@ -1,31 +1,30 @@
-const productLinks = [
-  { label: "How it works", href: "#how" },
-  { label: "Pricing", href: "#pricing" },
-  { label: "FAQ", href: "#faq" },
+// Compact 3-column footer: brand (left), other links (middle), contact (right),
+// over a slim non-custodial notice. Design tokens/colors/borders are unchanged —
+// only the density and content are restructured. Both "other links" route to the
+// local /privacy disclosures page.
+const otherLinks = [
+  { label: "Legal info", href: "/legal" },
+  { label: "Cookies and privacy policy", href: "/privacy" },
 ]
 
 export function SiteFooter() {
   return (
     <footer className="border-t border-border bg-background">
-      <div className="mx-auto w-full max-w-[1160px] px-8 py-[clamp(44px,6vw,64px)]">
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] items-start gap-8">
-          <div>
-            <div className="text-[18px] font-bold tracking-[-0.02em] text-foreground">
-              Purser<span className="text-primary">Pay</span>
-            </div>
-            <p className="mt-3.5 max-w-[32ch] text-[15px] leading-[1.5] text-muted-foreground">
-              Serious software for moving real money — quietly, and only with your
-              signature.
-            </p>
+      <div className="mx-auto w-full max-w-[1160px] px-8 py-[clamp(28px,4vw,40px)]">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] items-start gap-8">
+          {/* Left — brand only */}
+          <div className="text-[18px] font-bold tracking-[-0.02em] text-foreground">
+            Purser<span className="text-primary">Pay</span>
           </div>
 
+          {/* Middle — other links */}
           <div className="flex flex-col gap-3">
             <span className="font-mono text-[10.5px] tracking-[0.14em] text-[#93908A]">
-              product
+              other links
             </span>
-            {productLinks.map((link) => (
+            {otherLinks.map((link) => (
               <a
-                key={link.href}
+                key={link.label}
                 href={link.href}
                 className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
               >
@@ -34,30 +33,21 @@ export function SiteFooter() {
             ))}
           </div>
 
+          {/* Right — contact */}
           <div className="flex flex-col gap-3">
             <span className="font-mono text-[10.5px] tracking-[0.14em] text-[#93908A]">
               contact
             </span>
             <a
-              href="https://purserpay.app"
-              target="_blank"
-              rel="noreferrer"
+              href="mailto:info@purserpay.app"
               className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
             >
-              purserpay.app
-            </a>
-            <a
-              href="mailto:crew@purserpay.app"
-              className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
-            >
-              crew@purserpay.app
+              info@purserpay.app
             </a>
           </div>
         </div>
 
-        <div className="mt-9 mb-5 h-px bg-border" />
-
-        <div className="flex flex-wrap justify-between gap-4">
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
           <span className="font-mono text-[11px] text-[#93908A]">
             © 2026 PurserPay · Non-custodial. You sign. You hold the keys.
           </span>

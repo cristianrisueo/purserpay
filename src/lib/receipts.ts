@@ -58,6 +58,22 @@ export function paidPayeeIds(
   return ids
 }
 
+/** The most recent payment (batch) that paid a given roster id in the current
+ *  cycle — the source for both the Tronscan link and the downloadable receipt. */
+export function paymentForPayee(
+  payments: StoredPayment[],
+  payeeId: string,
+  since: number
+): StoredPayment | null {
+  let latest: StoredPayment | null = null
+  for (const p of payments) {
+    if (p.network !== NETWORK.key || p.timestamp < since) continue
+    if (!p.payeeIds.includes(payeeId)) continue
+    if (!latest || p.timestamp > latest.timestamp) latest = p
+  }
+  return latest
+}
+
 /** The txid that paid a given roster id in the current cycle (most recent),
  *  for surfacing a Tronscan link on a paid row. */
 export function txidForPayee(
@@ -65,11 +81,5 @@ export function txidForPayee(
   payeeId: string,
   since: number
 ): string | null {
-  let latest: StoredPayment | null = null
-  for (const p of payments) {
-    if (p.network !== NETWORK.key || p.timestamp < since) continue
-    if (!p.payeeIds.includes(payeeId)) continue
-    if (!latest || p.timestamp > latest.timestamp) latest = p
-  }
-  return latest?.txid ?? null
+  return paymentForPayee(payments, payeeId, since)?.txid ?? null
 }

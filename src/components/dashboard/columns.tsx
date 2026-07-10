@@ -32,6 +32,8 @@ declare module "@tanstack/react-table" {
     /** tx hash per payee id (for the Tronscan link on a paid/pending row). */
     txidByPayee: Map<string, string>
     payRow: (id: string) => void
+    /** Render + download a local PDF receipt for a paid row's batch. */
+    downloadReceipt: (id: string) => void
     updatePayee: (id: string, input: PayeeInput) => Promise<void>
     removePayee: (id: string) => Promise<void>
   }
@@ -143,7 +145,7 @@ export const columns: ColumnDef<Payee>[] = [
           target="_blank"
           rel="noreferrer"
           title="View on Tronscan"
-          className="text-muted-foreground transition-colors hover:text-primary"
+          className="text-primary transition-colors hover:text-primary/80"
         >
           <ExternalLink className="size-3.5" aria-hidden="true" />
         </a>
@@ -184,19 +186,33 @@ export const columns: ColumnDef<Payee>[] = [
         )
       }
 
+      // Paid rows expose the two-action receipt model — the Tronscan tracker
+      // link (above) and a dedicated Download PDF control — decoupled. Unpaid
+      // rows keep the Pay action.
       return (
         <div className="flex items-center justify-end gap-2.5">
           {link}
           {pill}
-          <Button
-            variant="outline"
-            size="sm"
-            className="min-w-[52px]"
-            disabled={payDisabled}
-            onClick={() => meta.payRow(id)}
-          >
-            {paid ? "Done" : "Pay"}
-          </Button>
+          {paid ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => meta.downloadReceipt(id)}
+              title="Download a PDF receipt for this payout"
+            >
+              Download PDF
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="min-w-[52px]"
+              disabled={payDisabled}
+              onClick={() => meta.payRow(id)}
+            >
+              Pay
+            </Button>
+          )}
         </div>
       )
     },

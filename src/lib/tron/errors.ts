@@ -124,6 +124,11 @@ export function decodeRevert(
         "reverted",
         "That batch had no one to pay — nobody was paid."
       )
+    case "InvalidPlan":
+      return new PurserError(
+        "reverted",
+        "That subscription plan isn't valid — nothing was charged. Please pick monthly or annual and try again."
+      )
     case "LengthMismatch":
       return new PurserError(
         "reverted",

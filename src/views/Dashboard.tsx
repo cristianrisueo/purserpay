@@ -1,5 +1,8 @@
 "use client"
 
+import { useCallback, useEffect } from "react"
+import { useRouter } from "next/navigation"
+
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { EmptyRoster } from "@/components/dashboard/EmptyRoster"
 import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
@@ -7,9 +10,48 @@ import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { usePayout } from "@/hooks/usePayout"
+import { isPurserPayDeployed } from "@/lib/tron/subscription"
 
 export function Dashboard() {
   const payout = usePayout()
+  const router = useRouter()
+
+  const {
+    connected,
+    walletHydrated,
+    subscriptionActive,
+    subscriptionChecking,
+    disconnect,
+  } = payout
+
+  // Route guard. Once the contract is deployed, the dashboard requires a connected
+  // wallet AND an active subscription — anyone else is redirected to the landing.
+  // While PurserPay is undeployed the gate is bypassed (there's nothing to enforce
+  // yet), so the dashboard stays usable pre-launch and flips strict automatically at
+  // deploy. Guarded against the initial unknown window: wait for the wallet hydrate,
+  // and for the subscription read to settle, before acting.
+  useEffect(() => {
+    if (!isPurserPayDeployed()) return
+    if (!walletHydrated) return
+    if (!connected) {
+      router.replace("/")
+      return
+    }
+    if (subscriptionChecking || subscriptionActive === null) return
+    if (subscriptionActive === false) router.replace("/")
+  }, [
+    connected,
+    walletHydrated,
+    subscriptionActive,
+    subscriptionChecking,
+    router,
+  ])
+
+  // Disconnect the wallet AND leave the gated dashboard immediately.
+  const handleDisconnect = useCallback(async () => {
+    await disconnect()
+    router.replace("/")
+  }, [disconnect, router])
 
   return (
     <div className="min-h-svh bg-background">
@@ -19,9 +61,10 @@ export function Dashboard() {
         networkName={payout.networkName}
         account={payout.account}
         balance={payout.balance}
+        subscriptionExpiresAt={payout.subscriptionExpiresAt}
         walletError={payout.walletError}
         onConnect={payout.connect}
-        onDisconnect={payout.disconnect}
+        onDisconnect={handleDisconnect}
       />
 
       <main className="mx-auto w-full max-w-[1160px] px-6 py-8 md:px-8 md:py-12">
@@ -86,6 +129,7 @@ export function Dashboard() {
               rowTxState={payout.rowTxState}
               txidByPayee={payout.txidByPayee}
               payRow={payout.payRow}
+              downloadReceipt={payout.downloadReceipt}
               updatePayee={payout.updatePayee}
               removePayee={payout.removePayee}
             />

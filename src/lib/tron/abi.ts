@@ -56,8 +56,14 @@ export const DISPERSE_ABI: AbiFragment[] = [
       { name: "totalAmount", type: "uint256", indexed: false },
     ],
   },
-  // --- subscribe: flat 250 USDT/period (ready for the gate; not called yet) ---
-  { type: "function", name: "subscribe", stateMutability: "nonpayable", inputs: [], outputs: [] },
+  // --- subscribe: multi-tier (plan 0 = 250/30d, plan 1 = 2,500/365d) ---
+  {
+    type: "function",
+    name: "subscribe",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "planType", type: "uint8" }],
+    outputs: [],
+  },
   {
     type: "event",
     name: "SubscriptionPaid",
@@ -75,6 +81,8 @@ export const DISPERSE_ABI: AbiFragment[] = [
   { type: "function", name: "usdt", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "SUBSCRIPTION_PRICE", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "SUBSCRIPTION_PERIOD", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "SUBSCRIPTION_PRICE_ANNUAL", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
+  { type: "function", name: "SUBSCRIPTION_PERIOD_ANNUAL", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   // --- custom errors: first four preserved from PurseDisperseUsdt (identical selectors) ---
   { type: "error", name: "LengthMismatch", inputs: [{ name: "recipientsLength", type: "uint256" }, { name: "amountsLength", type: "uint256" }] },
   { type: "error", name: "EmptyBatch", inputs: [] },
@@ -83,6 +91,7 @@ export const DISPERSE_ABI: AbiFragment[] = [
   // --- new PurserPay errors ---
   { type: "error", name: "TransferFailed", inputs: [{ name: "token", type: "address" }, { name: "from", type: "address" }, { name: "to", type: "address" }, { name: "amount", type: "uint256" }] },
   { type: "error", name: "ZeroAddressConfig", inputs: [] },
+  { type: "error", name: "InvalidPlan", inputs: [{ name: "planType", type: "uint8" }] },
 ]
 
 /** Preferred alias for the full contract ABI. Points at the same array as
@@ -122,10 +131,11 @@ export const ERROR_SELECTORS: Record<string, ErrorSpec> = {
   "0xc2e5347d": { name: "EmptyBatch", indexHint: false },
   "0x0ae5f8db": { name: "ZeroAddressRecipient", indexHint: true },
   "0x9af70448": { name: "ZeroAmount", indexHint: true },
-  // PurserPay transfer-failure + config guards (keccak-derived from PurserPay.sol;
+  // PurserPay transfer-failure + config + plan guards (keccak-derived from PurserPay.sol;
   // not yet mined on-chain — the contract is not deployed in this sprint)
   "0xcd3f1659": { name: "TransferFailed", indexHint: false },
   "0x0948465e": { name: "ZeroAddressConfig", indexHint: false },
+  "0xcc0a45bc": { name: "InvalidPlan", indexHint: false },
   // OpenZeppelin ERC20 (surfaced through a failed transferFrom on the Nile mock)
   "0xfb8f41b2": { name: "ERC20InsufficientAllowance", indexHint: false },
   "0xe450d38c": { name: "ERC20InsufficientBalance", indexHint: false },

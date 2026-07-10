@@ -93,7 +93,7 @@ export function SubscribeDialog({
         <DialogHeader>
           <DialogTitle>Activate your subscription</DialogTitle>
           <DialogDescription>
-            Purser Pay is {SUBSCRIPTION_PRICE_USDT} USDT a month, paid on-chain
+            PurserPay is {SUBSCRIPTION_PRICE_USDT} USDT a month, paid on-chain
             from your own wallet. Enter your billing details to continue — they're
             encrypted and stored apart from your payouts.
           </DialogDescription>

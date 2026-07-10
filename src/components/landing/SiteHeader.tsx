@@ -1,11 +1,12 @@
-import Link from "next/link"
+import { LandingWalletCta } from "./LandingWalletCta"
 
-import { Button } from "@/components/ui/button"
-
+// Root-relative anchors so the shared header navigates correctly from any route
+// (e.g. /legal) — on the landing these stay same-document hash scrolls (no reload).
 const navLinks = [
-  { label: "How it works", href: "#how" },
-  { label: "Pricing", href: "#pricing" },
-  { label: "FAQ", href: "#faq" },
+  { label: "Why us", href: "/#why" },
+  { label: "How it works", href: "/#how" },
+  { label: "Pricing", href: "/#pricing" },
+  { label: "FAQs", href: "/#faq" },
 ]
 
 export function SiteHeader() {
@@ -13,7 +14,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-[1160px] flex-wrap items-center justify-between gap-x-5 gap-y-3 px-8 py-[15px]">
         <a
-          href="#top"
+          href="/#why"
           className="text-[18px] font-bold tracking-[-0.02em] text-foreground"
         >
           Purser<span className="text-primary">Pay</span>
@@ -29,18 +30,7 @@ export function SiteHeader() {
               {link.label}
             </a>
           ))}
-          <Link
-            href="/dashboard"
-            className="text-[14.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Log in
-          </Link>
-          <Button
-            asChild
-            className="h-auto rounded-[10px] px-[18px] py-2.5 text-[14.5px] font-semibold shadow-[0_1px_2px_rgba(17,16,20,0.08)]"
-          >
-            <Link href="/dashboard">Get started</Link>
-          </Button>
+          <LandingWalletCta />
         </nav>
       </div>
     </header>

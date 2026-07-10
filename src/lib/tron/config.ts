@@ -54,12 +54,27 @@ export const PENDING_DEPLOYMENT_ADDRESS = "T_PENDING_DEPLOYMENT_ADDRESS"
  *  same contract serves both disperse and subscribe). */
 export const PURSERPAY_ADDRESS = PENDING_DEPLOYMENT_ADDRESS
 
-/** The flat subscription price in USDT base units (6 decimals). Matches the
- *  immutable contract constant `SUBSCRIPTION_PRICE = 250 * 10**6`. */
+/** Subscription plan selector — matches the contract's `subscribe(uint8 planType)`.
+ *  0 = monthly (250 / 30d), 1 = annual (2,500 / 365d). */
+export type SubscriptionPlan = 0 | 1
+
+/** The monthly (plan 0) price in USDT base units (6 decimals). Matches the immutable
+ *  contract constant `SUBSCRIPTION_PRICE = 250 * 10**6`. */
 export const SUBSCRIPTION_PRICE_UNITS = 250_000_000n
 
-/** The subscription price in whole USDT, for display (e.g. the paywall button). */
+/** The monthly (plan 0) price in whole USDT, for display (e.g. the paywall button). */
 export const SUBSCRIPTION_PRICE_USDT = 250
+
+/** The annual (plan 1) price in USDT base units. Matches `SUBSCRIPTION_PRICE_ANNUAL`. */
+export const SUBSCRIPTION_PRICE_ANNUAL_UNITS = 2_500_000_000n
+
+/** The annual (plan 1) price in whole USDT, for display. */
+export const SUBSCRIPTION_PRICE_ANNUAL_USDT = 2500
+
+/** Base units for a plan. */
+export function priceUnitsForPlan(plan: SubscriptionPlan): bigint {
+  return plan === 1 ? SUBSCRIPTION_PRICE_ANNUAL_UNITS : SUBSCRIPTION_PRICE_UNITS
+}
 
 /** The USDT token. On Nile this is our MockUsdtTrc20 (6 decimals, same shape as
  *  real USDT-TRC20). Mainnet swaps this for Tether's real contract. */

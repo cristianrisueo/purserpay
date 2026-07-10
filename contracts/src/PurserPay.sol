@@ -23,9 +23,9 @@ interface ITRC20 {
  *             payer to each recipient via transferFrom — no fee, no percentage, no
  *             funds retained. This is the compliance moat: Purser has zero control
  *             over user funds.
- *           - subscribe(): the flat monetization. Pulls EXACTLY 250 USDT from the
- *             subscriber and forwards it, in the same transaction, to an immutable
- *             cold treasury.
+ *           - subscribe(planType): the flat monetization. Pulls EXACTLY the plan's
+ *             price (250 USDT monthly / 2,500 USDT annual) from the subscriber and
+ *             forwards it, in the same transaction, to an immutable cold treasury.
  *
  * @dev    Ownerless and immutable by design: no owner, no admin role, no pause, no
  *         withdraw, no upgrade path, no payable/receive/fallback. `usdt` and
@@ -49,11 +49,17 @@ contract PurserPay {
     // Subscription economics (flat fee — NO percentage of any volume)
     // -------------------------------------------------------------------------
 
-    /// @notice Exact subscription price: 250 USDT, 6 decimals.
+    /// @notice Monthly (plan 0) price: 250 USDT, 6 decimals.
     uint256 public constant SUBSCRIPTION_PRICE = 250 * 10 ** 6;
 
-    /// @notice Length of one subscription period.
+    /// @notice Monthly (plan 0) period.
     uint256 public constant SUBSCRIPTION_PERIOD = 30 days;
+
+    /// @notice Annual (plan 1) price: 2,500 USDT, 6 decimals (two months free vs. monthly).
+    uint256 public constant SUBSCRIPTION_PRICE_ANNUAL = 2500 * 10 ** 6;
+
+    /// @notice Annual (plan 1) period.
+    uint256 public constant SUBSCRIPTION_PERIOD_ANNUAL = 365 days;
 
     /// @notice Unix timestamp at which each subscriber's access lapses. Written by
     ///         subscribe(); read by the off-chain gate via isSubscriptionActive().
@@ -84,6 +90,8 @@ contract PurserPay {
     error TransferFailed(address token, address from, address to, uint256 amount);
     /// @dev Constructor guard: neither immutable may be the zero address.
     error ZeroAddressConfig();
+    /// @dev subscribe() called with an unknown plan (only 0 = monthly, 1 = annual exist).
+    error InvalidPlan(uint8 planType);
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -106,23 +114,40 @@ contract PurserPay {
     // -------------------------------------------------------------------------
 
     /**
-     * @notice Pay for one subscription period. Pulls EXACTLY {SUBSCRIPTION_PRICE}
-     *         USDT from the caller and forwards it, atomically, to {treasuryWallet}.
-     * @dev    The caller must have approved this contract for at least
-     *         {SUBSCRIPTION_PRICE} on {usdt}. If the transfer fails (insufficient
-     *         balance or allowance), the whole transaction reverts and no
-     *         subscription is granted — you cannot subscribe by paying less. The
-     *         contract only ever pulls the fixed price, so you can never pay more.
-     *         Effect (expiry write) precedes the interaction (CEI); a failed
-     *         transfer rolls the expiry write back with the rest of the tx.
+     * @notice Pay for one subscription period on a fixed plan. Pulls EXACTLY the
+     *         plan's price from the caller and forwards it, atomically, to
+     *         {treasuryWallet}.
+     * @param  planType 0 = monthly ({SUBSCRIPTION_PRICE} / {SUBSCRIPTION_PERIOD}),
+     *         1 = annual ({SUBSCRIPTION_PRICE_ANNUAL} / {SUBSCRIPTION_PERIOD_ANNUAL}).
+     *         Any other value reverts {InvalidPlan} — prices/periods are hardcoded
+     *         constants, so no admin can add or alter a plan (still ownerless).
+     * @dev    The caller must have approved this contract for at least the plan's
+     *         price on {usdt}. If the transfer fails (insufficient balance or
+     *         allowance), the whole transaction reverts and no subscription is
+     *         granted — you cannot subscribe by paying less; the contract only ever
+     *         pulls the fixed price, so you can never pay more. The expiry is set to
+     *         `now + period` (reset-from-now). Effect (expiry write) precedes the
+     *         interaction (CEI); a failed transfer rolls the expiry write back.
      */
-    function subscribe() external {
-        uint256 expiration = block.timestamp + SUBSCRIPTION_PERIOD;
+    function subscribe(uint8 planType) external {
+        uint256 price;
+        uint256 period;
+        if (planType == 0) {
+            price = SUBSCRIPTION_PRICE;
+            period = SUBSCRIPTION_PERIOD;
+        } else if (planType == 1) {
+            price = SUBSCRIPTION_PRICE_ANNUAL;
+            period = SUBSCRIPTION_PERIOD_ANNUAL;
+        } else {
+            revert InvalidPlan(planType);
+        }
+
+        uint256 expiration = block.timestamp + period;
         subscriptionExpiresAt[msg.sender] = expiration;
 
-        _safeTransferFrom(usdt, msg.sender, treasuryWallet, SUBSCRIPTION_PRICE);
+        _safeTransferFrom(usdt, msg.sender, treasuryWallet, price);
 
-        emit SubscriptionPaid(msg.sender, SUBSCRIPTION_PRICE, block.timestamp, expiration);
+        emit SubscriptionPaid(msg.sender, price, block.timestamp, expiration);
     }
 
     /// @notice True while `account` has an unexpired subscription. Convenience read

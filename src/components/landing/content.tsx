@@ -1,8 +1,6 @@
-import type { ReactNode } from "react"
-
 // Landing copy & demo data — single source of truth for the marketing page.
-// Lifted verbatim from design-reference/PurserPay Landing.html (English).
-// Kept here so copy-auditor can review all landing copy in one place.
+// Restructured for the single-page IA: Manifiesto (#why) → Modules (#how) →
+// Pricing (#pricing) → FAQ. Copy is calm, precise, English, sentence case.
 
 export type Recipient = {
   name: string
@@ -21,164 +19,147 @@ export const demoRecipients: Recipient[] = [
   { name: "Priya", role: "Ops", wallet: "TP8xLm…6cR3", amount: "$650" },
 ]
 
-export type Problem = { n: string; title: string; body: string }
+// --- Bloques 1–4: the workflow modules (#how) -------------------------------
 
-export const problems: Problem[] = [
+export type ModulePoint = {
+  label: string
+  body: string
+  /** Leading verify marker: "single" = ✓, "double" = ✓✓. Absent = no marker
+   *  (a descriptive technical property, not a verification status). */
+  check?: "single" | "double"
+}
+
+export type Module = {
+  n: string
+  eyebrow: string
+  title: string
+  body: string
+  points?: ModulePoint[]
+  /** "video" renders a structural 16:9 walkthrough slot instead of points. */
+  variant?: "video"
+}
+
+export const modules: Module[] = [
   {
     n: "01",
-    title: "The monthly rebuild",
-    body: "A fresh spreadsheet every month, formulas held together by memory. Drag one cell wrong and someone is short — or paid twice.",
+    eyebrow: "double-check",
+    title: "The double-validation engine",
+    body: "Every address is checked twice before a single USDT moves, so a mistyped character never becomes money you can't get back.",
+    points: [
+      {
+        label: "Check 1 — Live on TRON",
+        body: "Confirms the address is well-formed and actually exists on the TRON ledger, the moment you enter it.",
+        check: "single",
+      },
+      {
+        label: "Check 2 — Paid before",
+        body: "Cross-references your own outgoing history and flags whether you've successfully paid that address in the last 90 days.",
+        check: "double",
+      },
+    ],
   },
   {
     n: "02",
-    title: "The split math",
-    body: "Seventy-thirty splits, bonuses, chargebacks, the one contractor on a bespoke rate. All reconciled by hand, usually late, usually tired.",
+    eyebrow: "your data, your device",
+    title: "CSV import, parsed on your machine",
+    body: "Bring the spreadsheet you already keep. Purser maps your columns to name, address and amount right here in the browser and drops them straight into the payout table — no reformatting, no re-keying.",
+    points: [
+      {
+        label: "100% client-side",
+        body: "Every CSV record and payout amount is parsed entirely in your browser. No spreadsheet data ever leaves your machine, reaches our servers, or passes to a third party.",
+      },
+      {
+        label: "A local sandbox",
+        body: "Your roster lives only in this browser's local sandbox, on your own machine. Clearing your browser's site data and cookies wipes it permanently — it was never kept anywhere else.",
+      },
+    ],
   },
   {
     n: "03",
-    title: "One typo, gone",
-    body: "A TRC20 address is thirty-four characters of nothing. Send to the wrong one and there's no reversal, no refund, and no one to call.",
+    eyebrow: "proof, on file",
+    title: "A receipt for every run",
+    body: "The moment a batch confirms on-chain, Purser writes an immutable receipt — timestamped, each recipient and destination hash recorded, every line linked straight to Tronscan. Clean books, clear proof of payment, no disputes.",
   },
   {
     n: "04",
-    title: "Hours you don't have",
-    body: "Two or three hours every payday spent copying and re-checking — hours that belong to running the business.",
+    eyebrow: "watch it work",
+    title: "The five-minute walkthrough",
+    body: "A short, unedited run through the whole thing — the happy path end to end, plus what an error actually looks like and how the checks catch it before anything is signed.",
+    variant: "video",
   },
 ]
 
-export type Step = {
-  n: string
-  title: string
-  body: string
-  strongTail?: string
+// --- Bloque 5: pricing (#pricing) — on-chain USDT ---------------------------
+
+export type PricingTier = {
+  name: string
+  /** On-chain plan selector for the subscribe() call: 0 = monthly, 1 = annual. */
+  plan: 0 | 1
+  price: string
+  unit: string
+  period: string
+  note?: string
   highlight?: boolean
 }
 
-export const steps: Step[] = [
+export const pricingTiers: PricingTier[] = [
   {
-    n: "1",
-    title: "Load your team",
-    body: "Import a CSV or enter them by hand — names, wallets, splits. Purser keeps the roster, so next month begins where this one left off.",
+    name: "Monthly",
+    plan: 0,
+    price: "250",
+    unit: "USDT",
+    period: "per 30 days",
+    note: "Uncapped volume. Pay month to month.",
   },
   {
-    n: "2",
-    title: "We build & check the batch",
-    body: "Every address validated on TRON, returning payees matched against last month, all splits and totals computed. Nothing to commit to until it's right.",
-  },
-  {
-    n: "3",
-    title: "You sign. Once.",
-    body: "Connect your wallet, review the batch, and sign a single time. The funds move straight from you to your team. ",
-    strongTail: "You sign, not us.",
+    name: "Annual",
+    plan: 1,
+    price: "2,500",
+    unit: "USDT",
+    period: "per 365 days",
+    note: "Two months free. Fixed cost, locked in.",
     highlight: true,
   },
 ]
 
-export type MoatNode = {
-  label: string
-  title: string
-  body: string
-  badge?: string
-  variant?: "default" | "dashed" | "end"
-}
-
-export const moatFlow: MoatNode[] = [
-  {
-    label: "your wallet",
-    title: "Funds sit here",
-    body: "Under your control, start to finish.",
-  },
-  {
-    label: "purser",
-    title: "Builds the batch",
-    body: "Checks every address. Computes every split.",
-    badge: "No funds pass through",
-    variant: "dashed",
-  },
-  {
-    label: "you sign",
-    title: "One signature",
-    body: "Your wallet, straight to the team.",
-  },
-  {
-    label: "team wallets",
-    title: "Everyone paid",
-    body: "Nothing detoured. Nothing held back.",
-    variant: "end",
-  },
-]
-
-export type Feature = { title: string; body: ReactNode }
-
-export const features: Feature[] = [
-  {
-    title: "Whole payroll, one signature",
-    body: "Approve fifty people with a single signature, instead of sending fifty transactions by hand.",
-  },
-  {
-    title: "Address double-check",
-    body: (
-      <>
-        <span className="font-semibold text-primary">✓</span> Valid on TRON.{" "}
-        <span className="font-semibold text-primary">✓✓</span> Paid before, and
-        matches last month. The costly typo is caught long before it goes out.
-      </>
-    ),
-  },
-  {
-    title: "A roster that remembers",
-    body: "Rates, splits and wallets set once and adjusted whenever. Each month resumes where you left off — never a blank sheet.",
-  },
-  {
-    title: "CSV import",
-    body: "Bring the sheet you already keep. Map the columns once and you're ready — no rebuilding from scratch.",
-  },
-  {
-    title: "Receipts that hold up",
-    body: "A PDF receipt for every run, each line linked to Tronscan. Clean books, clear proof of payment, no disputes.",
-  },
-  {
-    title: "TRON / USDT native",
-    body: "TRC20 USDT, end to end — the same rail your team is already paid on, without the friction.",
-  },
-]
-
 export const pricingBullets: string[] = [
-  "Unlimited payouts & recipients",
-  "No per-transaction or volume fees",
-  "Address double-check & batch builder",
-  "PDF receipts with Tronscan links",
-  "Non-custodial, always — you sign",
+  "Uncapped payout volume — move $5k or $500k",
+  "0.0% app fees — no per-transaction or volume cut",
+  "Address double-check & one-signature batch builder",
+  "Self sovereign — your data never leaves your device",
+  "Non-custodial — you sign, you hold the keys",
 ]
 
 export type Faq = { q: string; a: string }
 
-// NOTE: reference FAQ item 3 listed "TronLink, WalletConnect, and Ledger".
-// Ledger is NOT wired in V1 (TronLink + WalletConnect only) — removed here and
-// flagged in sprint_report.txt for Cristian's final call.
+// High-conviction, AEO-ready compliance FAQ: 6 razor-sharp Q&As ordered to answer a
+// non-crypto buyer's legal anxieties in sequence — custody, MSB classification, OFAC,
+// roster privacy, flat-fee posture, TRON/USDT. Copy is verbatim per owner; every claim
+// tracks CLAUDE.md (non-custodial, ownerless/immutable, salted-SHA-256 screening,
+// device-local roster, 250 USDT flat on-chain, TRON/USDT only).
 export const faqs: Faq[] = [
   {
-    q: "Do you hold my funds?",
-    a: "No — and it isn't a matter of trust. Purser is non-custodial: we build the batch, you sign it with your own wallet, and the funds go straight to your team. They never enter an account we control, so touching them simply isn't something we can do.",
+    q: "Does PurserPay custody funds at any point?",
+    a: "No. The protocol is 100% non-custodial. The smart contract acts as an atomic router. Funds move directly from your wallet to your recipients in a single transaction. PurserPay never holds, pools, or intermediates your capital.",
   },
   {
-    q: "Is this legal for me to use?",
-    a: "Purser only builds and signs payment batches — the same act as sending USDT yourself, organised and checked. We don't offer legal advice, so speak with your accountant about your own situation. But moving your own money to your own team isn't something we gate.",
+    q: "How does this protocol avoid being classified as a Money Services Business (MSB)?",
+    a: "PurserPay is an ownerless, immutable software infrastructure. The contract has no admin keys, no pause functions, and cannot halt or alter transaction flows. Because we exert zero control over user funds and charge no percentage-based fees, we operate strictly as a technology provider, not a financial intermediary.",
   },
   {
-    q: "What wallets work?",
-    a: "TronLink and WalletConnect. You connect your wallet, review, and sign — your keys never reach us.",
+    q: "How does the automated sanction screening (OFAC) filter work?",
+    a: "Before any batch is signed, your recipient list is processed entirely server-side. Addresses are transformed into irreversible cryptographic hashes (SHA-256 + secret salt) and screened against international restriction lists. If a match occurs, the transaction blocks automatically on the backend before touching your wallet.",
   },
   {
-    q: "What if I send to a wrong address?",
-    a: "That's precisely what the double-check is for. Every address is validated on TRON, and anyone you've paid before is matched against last month's records and flagged if something looks off. Nothing is signed until you've approved it.",
+    q: "Is my team's payout roster private, or is it leaked on the blockchain?",
+    a: "Your payroll data is entirely private. All employee names, custom IDs, and wallet mapping are stored locally on your device via browser storage (IndexedDB). PurserPay never uploads your roster to its servers, shielding your corporate payment structure from public ledger scrapers and competitors.",
   },
   {
-    q: "Which chains and tokens?",
-    a: "TRON / USDT (TRC20) — the rail these teams are already paid on, and the one that matters to you. It's what we support today.",
+    q: "Why do you charge a flat subscription fee instead of volume-based percentages?",
+    a: "Volume-based fees penalize your growth and alter the legal posture of our contract. We charge a flat fee of 250 USDT per month, settled transparently on-chain. This keeps the core utility free to use and ensures our relationship remains strictly that of a software service.",
   },
   {
-    q: "Is my team's data private?",
-    a: "Yes. Your roster — names, rates, splits — stays on your device and never leaves your browser. We see the batch you choose to build, nothing more. There's nothing to leak, because we don't store it.",
+    q: "Why does the protocol operate exclusively with USDT on the TRON network?",
+    a: "Corporate operations require price stability and predictable overhead. TRON provides the deepest circulating liquidity for USDT globally alongside near-zero network energy costs, allowing mass payout batches to execute with flawless financial efficiency.",
   },
 ]

@@ -81,7 +81,8 @@ contract PurserPayTest is Test {
     address internal subscriber;
     address internal payer;
 
-    uint256 internal constant PRICE = 250 * 10 ** 6; // exact subscription price
+    uint256 internal constant PRICE = 250 * 10 ** 6; // exact monthly price (plan 0)
+    uint256 internal constant PRICE_ANNUAL = 2500 * 10 ** 6; // exact annual price (plan 1)
     uint256 internal constant UNDERPAY = 249 * 10 ** 6; // one dollar short
 
     // Local copies of the contract's events, for vm.expectEmit matching.
@@ -110,6 +111,8 @@ contract PurserPayTest is Test {
         assertEq(purser.treasuryWallet(), treasury);
         assertEq(purser.SUBSCRIPTION_PRICE(), PRICE);
         assertEq(purser.SUBSCRIPTION_PERIOD(), 30 days);
+        assertEq(purser.SUBSCRIPTION_PRICE_ANNUAL(), PRICE_ANNUAL);
+        assertEq(purser.SUBSCRIPTION_PERIOD_ANNUAL(), 365 days);
     }
 
     function test_Constructor_RevertsOnZeroUsdt() public {
@@ -137,7 +140,7 @@ contract PurserPayTest is Test {
         emit SubscriptionPaid(subscriber, PRICE, block.timestamp, expectedExpiry);
 
         vm.prank(subscriber);
-        purser.subscribe();
+        purser.subscribe(0);
 
         assertEq(usdt.balanceOf(treasury), PRICE, "treasury funded with exactly 250");
         assertEq(usdt.balanceOf(subscriber), 0, "subscriber fully debited");
@@ -159,7 +162,7 @@ contract PurserPayTest is Test {
                 PurserPay.TransferFailed.selector, address(usdt), subscriber, treasury, PRICE
             )
         );
-        purser.subscribe();
+        purser.subscribe(0);
 
         assertEq(usdt.balanceOf(treasury), 0, "no payment reached treasury");
         assertEq(purser.subscriptionExpiresAt(subscriber), 0, "no subscription granted");
@@ -178,7 +181,7 @@ contract PurserPayTest is Test {
                 PurserPay.TransferFailed.selector, address(usdt), subscriber, treasury, PRICE
             )
         );
-        purser.subscribe();
+        purser.subscribe(0);
 
         assertEq(usdt.balanceOf(treasury), 0);
         assertEq(purser.subscriptionExpiresAt(subscriber), 0);
@@ -191,7 +194,7 @@ contract PurserPayTest is Test {
         usdt.approve(address(purser), 1000 * 10 ** 6);
 
         vm.prank(subscriber);
-        purser.subscribe();
+        purser.subscribe(0);
 
         assertEq(usdt.balanceOf(treasury), PRICE, "exactly 250 forwarded");
         assertEq(usdt.balanceOf(subscriber), 750 * 10 ** 6, "only 250 pulled");
@@ -208,16 +211,70 @@ contract PurserPayTest is Test {
         vm.startPrank(subscriber);
         usdt.approve(address(purser), 1000 * 10 ** 6);
 
-        purser.subscribe();
+        purser.subscribe(0);
         uint256 firstExpiry = purser.subscriptionExpiresAt(subscriber);
 
         vm.warp(block.timestamp + 10 days);
-        purser.subscribe();
+        purser.subscribe(0);
         vm.stopPrank();
 
         assertEq(purser.subscriptionExpiresAt(subscriber), block.timestamp + 30 days);
         assertGt(purser.subscriptionExpiresAt(subscriber), firstExpiry);
         assertEq(usdt.balanceOf(treasury), 2 * PRICE);
+    }
+
+    // -------------------------------------------------------------------------
+    // subscribe(planType) — annual tier (plan 1) and invalid-plan revert
+    // -------------------------------------------------------------------------
+
+    /// @dev Plan 1 pulls EXACTLY 2,500 USDT and grants a 365-day period.
+    function test_Subscribe_Annual_Pulls2500_Adds365Days() public {
+        usdt.mint(subscriber, PRICE_ANNUAL);
+        vm.prank(subscriber);
+        usdt.approve(address(purser), PRICE_ANNUAL);
+
+        uint256 expectedExpiry = block.timestamp + purser.SUBSCRIPTION_PERIOD_ANNUAL();
+
+        vm.expectEmit(true, false, false, true, address(purser));
+        emit SubscriptionPaid(subscriber, PRICE_ANNUAL, block.timestamp, expectedExpiry);
+
+        vm.prank(subscriber);
+        purser.subscribe(1);
+
+        assertEq(usdt.balanceOf(treasury), PRICE_ANNUAL, "treasury funded with exactly 2,500");
+        assertEq(usdt.balanceOf(subscriber), 0, "subscriber fully debited");
+        assertEq(usdt.balanceOf(address(purser)), 0, "contract holds nothing");
+        assertEq(expectedExpiry, block.timestamp + 365 days, "365-day period");
+        assertEq(purser.subscriptionExpiresAt(subscriber), expectedExpiry, "annual expiry persisted");
+        assertTrue(purser.isSubscriptionActive(subscriber), "subscription active");
+    }
+
+    /// @dev The annual plan pulls EXACTLY 2,500 even with a larger allowance — never more.
+    function test_Subscribe_Annual_PullsExactly2500_NeverMore() public {
+        usdt.mint(subscriber, 5000 * 10 ** 6);
+        vm.prank(subscriber);
+        usdt.approve(address(purser), 5000 * 10 ** 6);
+
+        vm.prank(subscriber);
+        purser.subscribe(1);
+
+        assertEq(usdt.balanceOf(treasury), PRICE_ANNUAL, "exactly 2,500 forwarded");
+        assertEq(usdt.balanceOf(subscriber), 2500 * 10 ** 6, "only 2,500 pulled");
+    }
+
+    /// @dev Any plan other than 0/1 reverts InvalidPlan — nothing charged, no access granted.
+    function test_Subscribe_InvalidPlan_Reverts() public {
+        usdt.mint(subscriber, PRICE_ANNUAL);
+        vm.prank(subscriber);
+        usdt.approve(address(purser), PRICE_ANNUAL);
+
+        vm.prank(subscriber);
+        vm.expectRevert(abi.encodeWithSelector(PurserPay.InvalidPlan.selector, uint8(2)));
+        purser.subscribe(2);
+
+        assertEq(usdt.balanceOf(treasury), 0, "no payment on an invalid plan");
+        assertEq(purser.subscriptionExpiresAt(subscriber), 0, "no subscription granted");
+        assertFalse(purser.isSubscriptionActive(subscriber));
     }
 
     // -------------------------------------------------------------------------
@@ -460,7 +517,7 @@ contract PurserPayHandler is Test {
         usdt.mint(sub, 250 * 10 ** 6);
         vm.startPrank(sub);
         usdt.approve(address(purser), 250 * 10 ** 6);
-        purser.subscribe();
+        purser.subscribe(0);
         vm.stopPrank();
     }
 }

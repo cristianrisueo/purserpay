@@ -35,6 +35,7 @@ type PayoutTableProps = {
   rowTxState: Map<string, TxState>
   txidByPayee: Map<string, string>
   payRow: (id: string) => void
+  downloadReceipt: (id: string) => void
   updatePayee: (id: string, input: PayeeInput) => Promise<void>
   removePayee: (id: string) => Promise<void>
 }
@@ -52,6 +53,7 @@ export function PayoutTable({
   rowTxState,
   txidByPayee,
   payRow,
+  downloadReceipt,
   updatePayee,
   removePayee,
 }: PayoutTableProps) {
@@ -73,6 +75,7 @@ export function PayoutTable({
       rowTxState,
       txidByPayee,
       payRow,
+      downloadReceipt,
       updatePayee,
       removePayee,
     },
