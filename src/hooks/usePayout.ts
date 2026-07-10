@@ -24,7 +24,7 @@ import {
   paymentForPayee,
   txidForPayee,
 } from "@/lib/receipts"
-import { downloadReceiptPdf } from "@/lib/receiptPdf"
+import { downloadReceiptPdf, downloadReportPdf } from "@/lib/receiptPdf"
 import { isTargetNetwork } from "@/lib/tron/client"
 import { NETWORK, txExplorerUrl } from "@/lib/tron/config"
 import { toBaseUnits } from "@/lib/tron/amount"
@@ -114,6 +114,17 @@ export function usePayout() {
     () => paidPayeeIds(payments, since),
     [payments, since]
   )
+  // True if there's at least one REPORTABLE payout on this network — a payment to a
+  // payee still in the roster. Independent of the green cycle (Reset only advances
+  // `since`, never deletes receipts), so the report survives a Reset; but gated on
+  // roster membership so the "Download report" button hides (rather than producing an
+  // empty PDF) once every paid payee has been removed. Mirrors downloadReport's filter.
+  const hasPayments = useMemo(() => {
+    const ids = new Set(roster.map((p) => p.id))
+    return payments.some(
+      (p) => p.network === NETWORK.key && p.recipients.some((r) => ids.has(r.id))
+    )
+  }, [payments, roster])
 
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
 
@@ -519,19 +530,26 @@ export function usePayout() {
       if (!account) return
       setSubscribeError(null)
       try {
-        // 1) Persist the PII server-side, encrypted, keyed by a dissociated
-        //    wallet hash. It goes straight to the server action — never Dexie,
-        //    never localStorage.
-        setSubscribePhase("storing")
-        await storeBillingProfile(account.address, JSON.stringify(pii))
-        // 2) Pay the subscription on-chain from the user's OWN wallet. The dashboard
-        //    paywall subscribes on the monthly plan (0); the annual tier is chosen on
-        //    the landing pricing section.
+        // 1) Pay the subscription on-chain FIRST, from the user's OWN wallet. If this
+        //    throws (rejected / no gas / revert) nothing is stored — no orphan PII for
+        //    a non-subscriber. The dashboard paywall subscribes on the monthly plan (0);
+        //    the annual tier is chosen on the landing pricing section.
         await runSubscribe(account.address, 0, {
           onApproveStart: () => setSubscribePhase("approving"),
           onSigning: () => setSubscribePhase("signing"),
           onConfirming: () => setSubscribePhase("confirming"),
         })
+        // 2) Paid → persist the encrypted PII server-side, keyed by a dissociated wallet
+        //    hash (straight to the server action — never Dexie, never localStorage).
+        //    Best-effort: the payment already succeeded and the gate is on-chain, so a
+        //    store failure must not block access or re-open the dialog (re-clicking would
+        //    re-charge — runSubscribe isn't idempotent). Swallow + log.
+        setSubscribePhase("storing")
+        try {
+          await storeBillingProfile(account.address, JSON.stringify(pii))
+        } catch (storeErr) {
+          console.error("PII store failed after a confirmed subscribe:", storeErr)
+        }
         // 3) Re-read the gate → active → close the paywall.
         await refreshSubscription(account.address)
         setPaywallOpen(false)
@@ -568,20 +586,25 @@ export function usePayout() {
 
   // --- Receipt download (local print-to-PDF, read-only) -------------------
   // Finds the batch that paid this row in the current cycle and renders a
-  // downloadable receipt. Purely local: reads IndexedDB, prints; no chain call,
-  // no signing, no funds. Names come from the current roster (falling back to
-  // the address if a payee was later removed).
+  // downloadable receipt for JUST this payee — a clean justificante to send to
+  // that one person, not the whole batch. Purely local: reads IndexedDB, prints;
+  // no chain call, no signing, no funds. The tx/date stay the batch's (the
+  // on-chain proof is the batch tx); only the recipient list narrows to one.
+  // Names come from the current roster (falling back to the address if a payee
+  // was later removed).
   const downloadReceipt = useCallback(
     (payeeId: string) => {
       const payment = paymentForPayee(payments, payeeId, since)
       if (!payment) return
       const nameById = new Map(roster.map((p) => [p.id, p.name]))
+      const mine = payment.recipients.filter((r) => r.id === payeeId)
+      if (mine.length === 0) return
       downloadReceiptPdf({
         txid: payment.txid,
         explorerUrl: txExplorerUrl(payment.txid),
         networkName: NETWORK.name,
         timestamp: payment.timestamp,
-        recipients: payment.recipients.map((r) => ({
+        recipients: mine.map((r) => ({
           name: nameById.get(r.id) ?? r.address,
           address: r.address,
           amount: r.amount,
@@ -590,6 +613,53 @@ export function usePayout() {
     },
     [payments, since, roster]
   )
+
+  // --- Full report download (local print-to-PDF, read-only) ---------------
+  // Every paid recipient still in the roster, across every batch on this network,
+  // newest first, each with its own date/time and Tronscan link. Full history —
+  // ignores the green cycle (`since`) so a Reset never drops past payouts — but a
+  // payee removed from the dashboard drops from the report too (its id is no longer
+  // in `nameById`); their line and its amount are excluded rather than shown with the
+  // raw address as a name. Same local-only promise as the per-row receipt: reads
+  // IndexedDB, prints; no chain call, no funds.
+  const downloadReport = useCallback(() => {
+    const nameById = new Map(roster.map((p) => [p.id, p.name]))
+    const lines = payments
+      .filter((p) => p.network === NETWORK.key)
+      .flatMap((p) =>
+        p.recipients
+          .filter((r) => nameById.has(r.id))
+          .map((r) => ({
+            timestamp: p.timestamp,
+            name: nameById.get(r.id) ?? r.address,
+            address: r.address,
+            amount: r.amount,
+            txid: p.txid,
+            explorerUrl: txExplorerUrl(p.txid),
+          }))
+      )
+      .sort((a, b) => b.timestamp - a.timestamp)
+    if (lines.length === 0) return
+    downloadReportPdf({
+      networkName: NETWORK.name,
+      generatedAt: Date.now(),
+      lines,
+    })
+  }, [payments, roster])
+
+  // --- Delete all local data (user-initiated device-local wipe) -----------
+  // Clears the ENTIRE local database — the roster, the full payment history, and the
+  // green-cycle meta — plus the session-only tx/selection state. Device-local only
+  // (Dexie): the account's encrypted PII (Supabase) and the on-chain subscription are
+  // untouched. The live queries repaint the dashboard to its empty state afterward.
+  const deleteAllData = useCallback(async () => {
+    await Promise.all([db.payees.clear(), db.payments.clear(), db.meta.clear()])
+    knownIds.current = new Set()
+    setRowSelection({})
+    setRowTxState(new Map())
+    setSessionTxid(new Map())
+    setPayError(null)
+  }, [])
 
   // --- Roster CRUD (unchanged, still Dexie) -------------------------------
   const forgetRow = useCallback((id: string) => {
@@ -662,6 +732,7 @@ export function usePayout() {
     shortfall,
     allSelectedPaid,
     anyPaid,
+    hasPayments,
     canPayAll,
     // subscription gate + OFAC
     subscriptionActive,
@@ -680,6 +751,8 @@ export function usePayout() {
     payRow,
     payAll,
     downloadReceipt,
+    downloadReport,
+    deleteAllData,
     subscribe,
     dismissOfac,
     addPayee,

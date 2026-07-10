@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { cn } from "@/lib/utils"
@@ -64,45 +64,12 @@ export function PricingSection() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [phase, setPhase] = useState<SubscribePhase>("idle")
   const [subscribeError, setSubscribeError] = useState<PurserError | null>(null)
-  // Whether the connected wallet already has an active subscription. null while
-  // unknown; starts null so the first client render matches the server (no
-  // hydration gap — the effect only mutates it asynchronously after loadTron).
-  const [subscribed, setSubscribed] = useState<boolean | null>(null)
 
-  // Read the wallet's subscription status (mirrors the nav LandingWalletCta) so an
-  // already-subscribed visitor is offered "Go to Dashboard" instead of paying again.
-  useEffect(() => {
-    let cancelled = false
-    let unsubscribe = () => {}
-    loadTron()
-      .then(({ getWalletProvider, getSubscriptionStatus }) => {
-        if (cancelled) return
-        const tronlink = getWalletProvider("tronlink")
-        async function refresh() {
-          const address = tronlink.getAddress()
-          if (!address) {
-            if (!cancelled) setSubscribed(false)
-            return
-          }
-          try {
-            const s = await getSubscriptionStatus(address)
-            if (!cancelled) setSubscribed(s.active)
-          } catch {
-            // Can't confirm on-chain → treat as not subscribed (fail-closed).
-            if (!cancelled) setSubscribed(false)
-          }
-        }
-        void refresh()
-        unsubscribe = tronlink.onChange(() => void refresh())
-      })
-      .catch(() => {
-        // Wallet libs unavailable — leave the button on its "Subscribe" default.
-      })
-    return () => {
-      cancelled = true
-      unsubscribe()
-    }
-  }, [])
+  // No wallet is read on mount — the injected wallet is only ever touched after the
+  // user clicks "Subscribe" (handleSubscribeClick). Reading window.tronWeb on load
+  // made TronLink prompt to unlock/reconnect for a previously-authorized wallet.
+  // The already-subscribed double-pay guard now runs inside the click handler
+  // (check status after connect → route to the dashboard instead of paying again).
 
   const selectedTier =
     pricingTiers.find((t) => t.name === selected) ?? pricingTiers[0]
@@ -112,17 +79,33 @@ export function PricingSection() {
   const periodLabel = plan === 1 ? "a year" : "a month"
 
   // Step 1 — "Subscribe": ensure a connected wallet (prompt only if needed), then
-  // open the billing dialog. The address is read fresh again at confirm time.
+  // — if that wallet is already subscribed — route to the dashboard instead of
+  // charging again (the double-pay guard, moved here from a mount effect so the
+  // wallet is never read on load). Otherwise open the billing dialog; the address
+  // is read fresh again at confirm time.
   async function handleSubscribeClick() {
     if (connecting) return
     setConnecting(true)
     setStatus(null)
     try {
-      const { getWalletProvider } = await loadTron()
+      const { getWalletProvider, getSubscriptionStatus } = await loadTron()
       const tronlink = getWalletProvider("tronlink")
-      if (!tronlink.getAddress()) {
+      let address = tronlink.getAddress()
+      if (!address) {
         setStatus("Connecting your wallet…")
-        await tronlink.connect()
+        address = (await tronlink.connect()).address
+      }
+      // Already subscribed → the dashboard, never a second charge. If the status
+      // can't be confirmed on-chain (RPC down), fall through to the dialog — the
+      // on-chain subscribe itself is the source of truth (fail-open to paywall).
+      try {
+        const status = await getSubscriptionStatus(address)
+        if (status.active) {
+          router.push("/dashboard")
+          return
+        }
+      } catch {
+        // Unconfirmable — open the paywall (matches prior behavior).
       }
       setStatus(null)
       setSubscribeError(null)
@@ -146,16 +129,24 @@ export function PricingSection() {
       const address = getWalletProvider("tronlink").getAddress()
       if (!address) throw new Error("Connect your wallet to continue.")
 
-      // 1) Encrypted PII → Supabase (server action). Never persisted client-side.
-      setPhase("storing")
-      await storeBillingProfile(address, JSON.stringify(pii))
-
-      // 2) On-chain subscribe for the active plan, from the user's own wallet.
+      // 1) On-chain subscribe FIRST for the active plan, from the user's own wallet. If
+      //    this throws (rejected / no gas / revert) nothing is stored — no orphan PII.
       await runSubscribe(address, plan, {
         onApproveStart: () => setPhase("approving"),
         onSigning: () => setPhase("signing"),
         onConfirming: () => setPhase("confirming"),
       })
+
+      // 2) Paid → encrypted PII → Supabase (server action; never persisted client-side).
+      //    Best-effort: the payment already succeeded and the gate is on-chain, so a
+      //    store failure must not block the now-paid user or re-open the dialog
+      //    (re-clicking would re-charge — runSubscribe isn't idempotent). Swallow + log.
+      setPhase("storing")
+      try {
+        await storeBillingProfile(address, JSON.stringify(pii))
+      } catch (storeErr) {
+        console.error("PII store failed after a confirmed subscribe:", storeErr)
+      }
 
       // 3) Subscribed → the guard releases the dashboard.
       router.push("/dashboard")
@@ -256,19 +247,11 @@ export function PricingSection() {
 
           <Button
             type="button"
-            onClick={
-              subscribed === true
-                ? () => router.push("/dashboard")
-                : handleSubscribeClick
-            }
+            onClick={handleSubscribeClick}
             disabled={connecting}
             className="mt-6 h-auto w-full rounded-[11px] py-4 text-[15.5px] font-semibold shadow-[0_10px_26px_-14px_rgba(15,181,201,0.55)]"
           >
-            {subscribed === true
-              ? "Go to Dashboard"
-              : connecting
-                ? "Connecting…"
-                : "Subscribe"}
+            {connecting ? "Connecting…" : "Subscribe"}
           </Button>
 
           {status ? (

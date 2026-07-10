@@ -30,11 +30,11 @@ type SubscribeDialogProps = {
   periodLabel?: string
 }
 
-/** Button content per phase. Once the PII is saved (past "storing"), the on-chain
- *  settle shows one spinner with a "don't close" warning rather than per-step labels. */
+/** Button content per phase. The on-chain settle (approve/sign/confirm) shows one
+ *  "Settling on-chain…" spinner; only after it confirms does "storing" show "Saving
+ *  your details…" while the PII is persisted. Idle shows the submit label. */
 function submitContent(
   phase: SubscribePhase,
-  priceUsdt: number
 ): { text: string; spinning: boolean } {
   switch (phase) {
     case "storing":
@@ -44,7 +44,7 @@ function submitContent(
     case "confirming":
       return { text: "Settling on-chain…", spinning: true }
     default:
-      return { text: `Confirm and pay (${priceUsdt} USDT)`, spinning: false }
+      return { text: `Confirm and pay`, spinning: false }
   }
 }
 
@@ -183,7 +183,7 @@ export function SubscribeDialog({
               className="min-w-0 flex-1 whitespace-normal"
             >
               {(() => {
-                const { text, spinning } = submitContent(phase, priceUsdt)
+                const { text, spinning } = submitContent(phase)
                 return (
                   <>
                     {spinning ? (

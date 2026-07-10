@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
@@ -38,47 +38,12 @@ export function LandingWalletCta({ className }: { className?: string }) {
   const [state, setState] = useState<CtaState>("disconnected")
   const [connecting, setConnecting] = useState(false)
 
-  // `state` starts at "disconnected" ("Connect wallet"), which is exactly what
-  // the server renders — so the first client render matches and there's no
-  // hydration mismatch. The effect only ever mutates state asynchronously
-  // (after loadTron resolves), well after hydration. No `mounted` flag needed.
-  useEffect(() => {
-    let cancelled = false
-    let unsubscribe = () => {}
-
-    loadTron()
-      .then(({ getWalletProvider, getSubscriptionStatus }) => {
-        if (cancelled) return
-        const tronlink = getWalletProvider("tronlink")
-
-        async function refresh() {
-          const address = tronlink.getAddress()
-          if (!address) {
-            if (!cancelled) setState("disconnected")
-            return
-          }
-          try {
-            const status = await getSubscriptionStatus(address)
-            if (!cancelled) setState(status.active ? "active" : "inactive")
-          } catch {
-            // Can't confirm on-chain → not subscribed (fail-closed, honest).
-            if (!cancelled) setState("inactive")
-          }
-        }
-
-        void refresh()
-        unsubscribe = tronlink.onChange(() => void refresh())
-      })
-      .catch(() => {
-        // Wallet libs unavailable — leave the CTA on its "Connect wallet" default.
-      })
-
-    return () => {
-      cancelled = true
-      unsubscribe()
-    }
-  }, [])
-
+  // The wallet is NEVER read on mount. `state` starts "disconnected" ("Connect
+  // wallet") — exactly what the server renders, so the first client render matches
+  // (no hydration gap) — and the injected wallet is only ever touched after the
+  // user clicks (handleClick, State A). Reading window.tronWeb on load made
+  // TronLink prompt to unlock/reconnect for a previously-authorized wallet; not
+  // touching it until a click is what keeps the landing popup-free.
   const label =
     state === "active"
       ? "Go to Dashboard"

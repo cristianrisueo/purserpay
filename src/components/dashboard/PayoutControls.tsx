@@ -171,7 +171,7 @@ export function PayoutControls({
         <ImportCsvDialog rosterCount={rosterCount} onImport={onImportRoster} />
         <AddPayeeButton onAdd={onAddPayee} variant="outline" collapseLabel />
         <Button
-          variant="ghost"
+          variant="outline"
           onClick={onReset}
           disabled={!anyPaid || paying}
           className="h-auto rounded-[10px] px-4 py-3 text-[14px] font-medium"

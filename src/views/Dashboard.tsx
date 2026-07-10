@@ -3,7 +3,9 @@
 import { useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 
+import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
+import { DeleteDataButton } from "@/components/dashboard/DeleteDataButton"
 import { EmptyRoster } from "@/components/dashboard/EmptyRoster"
 import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
@@ -132,6 +134,31 @@ export function Dashboard() {
               updatePayee={payout.updatePayee}
               removePayee={payout.removePayee}
             />
+
+            {/* Device-local data controls. Download report (a PDF of every payout
+                so far — shown only when there's a payout to report; survives a Reset,
+                which only advances the green cycle) sits beside Delete data (a full
+                wipe of the local Dexie DB, behind a confirm). Both act on device-local
+                data only — the on-chain subscription and settled payouts are untouched. */}
+            <div className="mt-5 flex flex-col gap-3 rounded-[14px] border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-[13px] text-muted-foreground">
+                {payout.hasPayments
+                  ? "A full record of every payout so far, with the time each was sent."
+                  : "Your roster and payment history are stored only on this device."}
+              </p>
+              <div className="flex flex-wrap items-center gap-2.5">
+                {payout.hasPayments ? (
+                  <Button
+                    variant="outline"
+                    onClick={payout.downloadReport}
+                    className="h-auto rounded-[10px] px-4 py-2.5 text-[14px] font-medium"
+                  >
+                    Download report
+                  </Button>
+                ) : null}
+                <DeleteDataButton onDelete={payout.deleteAllData} />
+              </div>
+            </div>
           </>
         )}
       </main>

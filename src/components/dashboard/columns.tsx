@@ -1,5 +1,5 @@
 import type { ColumnDef, RowData } from "@tanstack/react-table"
-import { ExternalLink, LoaderCircle } from "lucide-react"
+import { FileText, Globe, LoaderCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -139,16 +139,20 @@ export const columns: ColumnDef<Payee>[] = [
         meta.paying ||
         Boolean(blocked)
 
-      const link = txid ? (
-        <a
-          href={txExplorerUrl(txid)}
-          target="_blank"
-          rel="noreferrer"
-          title="View on Tronscan"
-          className="text-primary transition-colors hover:text-primary/80"
+      // Icon button (globe = opens the tx on the Tronscan website). The hover
+      // title + aria-label carry the meaning; Slot forwards them onto the <a>.
+      const tronscanButton = txid ? (
+        <Button
+          asChild
+          variant="outline"
+          size="icon-sm"
+          title="See on Tronscan"
+          aria-label="See on Tronscan"
         >
-          <ExternalLink className="size-3.5" aria-hidden="true" />
-        </a>
+          <a href={txExplorerUrl(txid)} target="_blank" rel="noreferrer">
+            <Globe aria-hidden="true" />
+          </a>
+        </Button>
       ) : null
 
       let pill
@@ -186,32 +190,40 @@ export const columns: ColumnDef<Payee>[] = [
         )
       }
 
-      // Paid rows expose the two-action receipt model — the Tronscan tracker
-      // link (above) and a dedicated Download PDF control — decoupled. Unpaid
-      // rows keep the Pay action.
+      // Paid rows show two icon buttons side by side — a PDF-file icon (download
+      // this payee's receipt) and a globe (see the tx on Tronscan); each carries
+      // its meaning in a hover title. Non-paid rows keep the Pay action; a row
+      // that already has a tx (confirming, or a broadcast that then failed) also
+      // surfaces the Tronscan tracker so it can be inspected.
       return (
         <div className="flex items-center justify-end gap-2.5">
-          {link}
           {pill}
           {paid ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => meta.downloadReceipt(id)}
-              title="Download a PDF receipt for this payout"
-            >
-              Download PDF
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => meta.downloadReceipt(id)}
+                title="Download PDF receipt"
+                aria-label="Download PDF receipt"
+              >
+                <FileText aria-hidden="true" />
+              </Button>
+              {tronscanButton}
+            </div>
           ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="min-w-[52px]"
-              disabled={payDisabled}
-              onClick={() => meta.payRow(id)}
-            >
-              Pay
-            </Button>
+            <>
+              {tronscanButton}
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-w-[52px]"
+                disabled={payDisabled}
+                onClick={() => meta.payRow(id)}
+              >
+                Pay
+              </Button>
+            </>
           )}
         </div>
       )

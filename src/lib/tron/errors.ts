@@ -165,6 +165,26 @@ export function fromReceiptResult(result: string): PurserError {
   }
 }
 
+/** Map a non-SUCCESS/REVERT receipt for a SUBSCRIPTION payment (a single tx, no
+ *  "batch" framing) to a calm PurserError. Energy/time both mean the wallet
+ *  couldn't cover the on-chain fee. */
+export function fromSubscribeReceiptResult(result: string): PurserError {
+  switch (result) {
+    case "OUT_OF_ENERGY":
+    case "OUT_OF_TIME":
+      return new PurserError(
+        "out-of-energy",
+        "Couldn't pay the subscription — your wallet ran out of TRX/energy for the network fee. Add a little TRX and try again."
+      )
+    default:
+      return new PurserError(
+        "reverted",
+        "The subscription payment didn't go through — nothing was charged. Please try again.",
+        `receipt result ${result}`
+      )
+  }
+}
+
 /** Best-effort classify an unknown thrown value (wallet SDK, fetch, tronweb)
  *  into a calm PurserError. Wallet-rejection codes/strings are recognized so a
  *  user cancelling never reads like a crash. */

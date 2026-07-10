@@ -18,7 +18,7 @@ import {
 } from "./disperse"
 import {
   decodeRevert,
-  fromReceiptResult,
+  fromSubscribeReceiptResult,
   humanize,
   PurserError,
   rpcUnreachable,
@@ -173,7 +173,7 @@ export async function runSubscribe(
     if (rc.result !== "SUCCESS") {
       throw rc.result === "REVERT"
         ? decodeRevert(rc.contractResult?.[0])
-        : fromReceiptResult(rc.result)
+        : fromSubscribeReceiptResult(rc.result)
     }
     outcome.approveTxid = approveTxid
   }
@@ -195,7 +195,7 @@ export async function runSubscribe(
   if (rc.result !== "SUCCESS") {
     throw rc.result === "REVERT"
       ? decodeRevert(rc.contractResult?.[0])
-      : fromReceiptResult(rc.result)
+      : fromSubscribeReceiptResult(rc.result)
   }
 
   outcome.txid = txid

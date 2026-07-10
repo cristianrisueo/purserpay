@@ -2,7 +2,7 @@ import Link from "next/link"
 import { TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { formatUsdt, truncateAddress } from "@/lib/format"
+import { formatLongDate, formatUsdt, truncateAddress } from "@/lib/format"
 import type { PurserError } from "@/lib/tron/errors"
 import type { WalletAccount } from "@/lib/tron/wallet"
 
@@ -30,10 +30,10 @@ export function DashboardHeader({
   onConnect,
   onDisconnect,
 }: DashboardHeaderProps) {
+  // Same "Month day, year" format as the payout title — one source of truth
+  // (formatLongDate), so every date in the app reads identically.
   const activeUntil =
-    subscriptionExpiresAt != null
-      ? new Date(subscriptionExpiresAt).toISOString().slice(0, 10)
-      : null
+    subscriptionExpiresAt != null ? formatLongDate(subscriptionExpiresAt) : null
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md">
