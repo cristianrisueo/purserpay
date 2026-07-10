@@ -4,6 +4,8 @@
 // roster: no server, no upload), and it never touches funds, keys, or the chain;
 // it only reads a receipt the user already holds in IndexedDB.
 
+import { payoutTitle } from "@/lib/format"
+
 export type ReceiptLine = { name: string; address: string; amount: number }
 
 export type ReceiptDoc = {
@@ -48,7 +50,6 @@ function fmtDate(ts: number): string {
 
 function renderReceiptHtml(doc: ReceiptDoc): string {
   const total = doc.recipients.reduce((sum, r) => sum + r.amount, 0)
-  const shortTx = `${doc.txid.slice(0, 10)}…${doc.txid.slice(-8)}`
 
   const rows = doc.recipients
     .map(
@@ -68,7 +69,7 @@ function renderReceiptHtml(doc: ReceiptDoc): string {
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>PurserPay receipt ${esc(shortTx)}</title>
+<title>${esc(payoutTitle(doc.timestamp))}</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -114,7 +115,7 @@ function renderReceiptHtml(doc: ReceiptDoc): string {
   <div class="head">
     <div>
       <div class="brand">Purser<span>Pay</span></div>
-      <div class="doc-title">Payment receipt</div>
+      <div class="doc-title">${esc(payoutTitle(doc.timestamp))}</div>
     </div>
     <div class="doc-title">${esc(fmtDate(doc.timestamp))}</div>
   </div>

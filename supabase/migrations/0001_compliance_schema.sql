@@ -86,3 +86,18 @@ $$;
 -- ----------------------------------------------------------------------------
 revoke all     on function public.encrypt_and_store_pii(text, text, text) from public;
 grant  execute on function public.encrypt_and_store_pii(text, text, text) to service_role;
+
+-- ----------------------------------------------------------------------------
+-- 7) Table privileges for service_role. BYPASSRLS (which service_role has) skips
+--    row-level POLICIES, but it does NOT imply table-level GRANTs — without these,
+--    the Server Actions connect as service_role and Postgres returns 42501
+--    "permission denied for table …". The RPC in (5) is SECURITY INVOKER, so it
+--    runs as the caller (service_role) and needs INSERT/UPDATE on billing_profiles;
+--    OFAC screening only reads ofac_sanctions.
+-- ----------------------------------------------------------------------------
+grant select, insert, update on public.billing_profiles to service_role;
+grant select                 on public.ofac_sanctions   to service_role;
+
+-- Reload the PostgREST schema cache so the grants and the RPC resolve over the API
+-- (fixes the PGRST202 "function not found in schema cache" until the next reload).
+notify pgrst, 'reload schema';

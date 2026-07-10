@@ -36,23 +36,29 @@ export const NETWORK: TronNetwork = {
 //   hostMatch: "api.trongrid", explorer: "https://tronscan.org"
 //   USDT_ADDRESS (real): TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
 
-/** Our ownerless, immutable disperse contract (Nile). This is the deployed
- *  PurseDisperseUsdt; disperse still points here so the working money path is
- *  untouched. */
-export const DISPERSE_ADDRESS = "TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x"
+/** Our ownerless, immutable disperse contract (Nile). Now the unified PurserPay
+ *  contract (disperse + subscribe) — its disperse/Dispersed/error selectors are
+ *  byte-for-byte preserved from the prior PurseDisperseUsdt, so the money path is
+ *  untouched. Same address as PURSERPAY_ADDRESS: one contract serves both.
+ *  (Superseded deploys: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 — wrong token;
+ *  TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x — disperse-only.) */
+export const DISPERSE_ADDRESS: string = "THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c"
 
-/** Sentinel used until the unified PurserPay contract (disperse + subscribe) is
- *  deployed. `isPurserPayDeployed()` compares against this — while it is the
- *  live value the subscription gate is fail-closed: the paywall shows and an
- *  on-chain subscribe surfaces a calm "not deployed yet" message. It is not a
- *  valid TRON address on purpose. */
-export const PENDING_DEPLOYMENT_ADDRESS = "T_PENDING_DEPLOYMENT_ADDRESS"
+/** Sentinel for the pre-deployment state. `isPurserPayDeployed()` compares
+ *  against this — while PURSERPAY_ADDRESS equals it, the subscription gate is
+ *  fail-closed (paywall shows; an on-chain subscribe surfaces a calm "not
+ *  deployed yet"). PurserPay is now deployed, so this is retained only as the
+ *  comparison target. It is not a valid TRON address on purpose. */
+export const PENDING_DEPLOYMENT_ADDRESS: string = "T_PENDING_DEPLOYMENT_ADDRESS"
 
-/** The PurserPay contract that carries the on-chain subscription (subscribe /
- *  isSubscriptionActive). NOT deployed yet — placeholder until then. At deploy,
- *  set this AND `DISPERSE_ADDRESS` to the one unified PurserPay address (the
- *  same contract serves both disperse and subscribe). */
-export const PURSERPAY_ADDRESS = PENDING_DEPLOYMENT_ADDRESS
+/** The deployed PurserPay contract (Nile) that carries the on-chain subscription
+ *  (subscribe / isSubscriptionActive) AND disperse. One unified, ownerless,
+ *  immutable contract serves both — DISPERSE_ADDRESS points at the same address.
+ *  Constructor immutables: usdt = TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile USDT,
+ *  Tether USD, 6dp), treasuryWallet = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2.
+ *  Deploy tx: df0032eae7d52f6d9e04d3f5628c85e993a62e26367c5f9c05c4151840bc28dd.
+ *  (Superseded: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 pointed at the wrong token.) */
+export const PURSERPAY_ADDRESS: string = "THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c"
 
 /** Subscription plan selector — matches the contract's `subscribe(uint8 planType)`.
  *  0 = monthly (250 / 30d), 1 = annual (2,500 / 365d). */
@@ -76,9 +82,12 @@ export function priceUnitsForPlan(plan: SubscriptionPlan): bigint {
   return plan === 1 ? SUBSCRIPTION_PRICE_ANNUAL_UNITS : SUBSCRIPTION_PRICE_UNITS
 }
 
-/** The USDT token. On Nile this is our MockUsdtTrc20 (6 decimals, same shape as
- *  real USDT-TRC20). Mainnet swaps this for Tether's real contract. */
-export const USDT_ADDRESS = "TSYr24mf1npLVWXAJqsDUo9yQwDCSWpqdt"
+/** The USDT token the contract pulls from — MUST equal the deployed PurserPay's
+ *  `usdt` immutable, or on-chain approvals land on the wrong token and every
+ *  subscribe/disperse reverts. On Nile this is Tether USD (symbol USDT, 6 decimals)
+ *  at TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf. (Was the MockUsdtTrc20 TSYr… before the
+ *  corrected-token redeploy.) Mainnet swaps this for Tether's mainnet contract. */
+export const USDT_ADDRESS = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
 
 /** USDT-TRC20 has 6 decimals. The contract does zero decimal math — the
  *  frontend converts human amounts to base units before dispersing. */

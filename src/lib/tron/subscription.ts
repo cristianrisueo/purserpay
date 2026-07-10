@@ -1,6 +1,6 @@
 import { PURSERPAY_ABI } from "./abi"
 import type { InjectedTronWeb } from "./client"
-import { getInjectedTronWeb } from "./client"
+import { readClient } from "./client"
 import {
   feeLimitForBatch,
   NETWORK,
@@ -66,6 +66,12 @@ function toExpiryMs(raw: unknown): number | null {
 /**
  * Read whether `account` has an active subscription on PurserPay, plus its expiry.
  *
+ * Read over the app's own KEYLESS node (never the injected wallet):
+ * `subscriptionExpiresAt` is a public view, so it needs no signer — and reading it
+ * through the user's wallet is what made the public landing touch TronLink on load
+ * (an authorized-but-locked wallet would prompt to unlock). `account` is only the
+ * constant-call `from` — nothing is signed, no funds move, no prompt is ever raised.
+ *
  * Fail-closed: when the contract isn't deployed yet we return `active: false`
  * WITHOUT a chain call (an expected state, not an error), so the paywall shows.
  * A read failure throws `rpcUnreachable` — the caller must treat that as "can't
@@ -78,11 +84,20 @@ export async function getSubscriptionStatus(
   if (!isPurserPayDeployed()) {
     return { deployed: false, active: false, expiresAt: null }
   }
-  const tw = getInjectedTronWeb()
-  if (!tw) return { deployed: true, active: false, expiresAt: null }
   try {
-    const raw = await purserPay(tw).subscriptionExpiresAt(account).call()
-    const expiresAt = toExpiryMs(raw)
+    const tw = readClient()
+    const res = (await tw.transactionBuilder.triggerConstantContract(
+      PURSERPAY_ADDRESS,
+      "subscriptionExpiresAt(address)",
+      {},
+      [{ type: "address", value: account }],
+      account
+    )) as { result?: { result?: boolean }; constant_result?: string[] }
+    if (!res?.result?.result) {
+      throw new Error("subscriptionExpiresAt read failed")
+    }
+    const hex = res.constant_result?.[0]
+    const expiresAt = toExpiryMs(hex ? BigInt("0x" + hex) : 0n)
     return {
       deployed: true,
       active: expiresAt != null && expiresAt > Date.now(),

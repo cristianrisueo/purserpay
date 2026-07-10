@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -22,20 +23,28 @@ type SubscribeDialogProps = {
   phase: SubscribePhase
   error: PurserError | null
   networkName: string
+  /** Plan price in whole USDT (250 monthly / 2,500 annual). Defaults to monthly so
+   *  the dashboard paywall caller stays unchanged. */
+  priceUsdt?: number
+  /** Cadence word for the copy ("a month" / "a year"). Defaults to monthly. */
+  periodLabel?: string
 }
 
-function submitLabel(phase: SubscribePhase): string {
+/** Button content per phase. Once the PII is saved (past "storing"), the on-chain
+ *  settle shows one spinner with a "don't close" warning rather than per-step labels. */
+function submitContent(
+  phase: SubscribePhase,
+  priceUsdt: number
+): { text: string; spinning: boolean } {
   switch (phase) {
     case "storing":
-      return "Saving your details…"
+      return { text: "Saving your details…", spinning: true }
     case "approving":
-      return `Approving ${SUBSCRIPTION_PRICE_USDT} USDT…`
     case "signing":
-      return "Confirm in your wallet…"
     case "confirming":
-      return "Confirming on TRON…"
+      return { text: "Settling on-chain…", spinning: true }
     default:
-      return `Subscribe (${SUBSCRIPTION_PRICE_USDT} USDT)`
+      return { text: `Confirm and pay (${priceUsdt} USDT)`, spinning: false }
   }
 }
 
@@ -46,6 +55,8 @@ export function SubscribeDialog({
   phase,
   error,
   networkName,
+  priceUsdt = SUBSCRIPTION_PRICE_USDT,
+  periodLabel = "a month",
 }: SubscribeDialogProps) {
   const [name, setName] = useState("")
   const [country, setCountry] = useState("")
@@ -93,9 +104,9 @@ export function SubscribeDialog({
         <DialogHeader>
           <DialogTitle>Activate your subscription</DialogTitle>
           <DialogDescription>
-            PurserPay is {SUBSCRIPTION_PRICE_USDT} USDT a month, paid on-chain
-            from your own wallet. Enter your billing details to continue — they're
-            encrypted and stored apart from your payouts.
+            PurserPay is {priceUsdt} USDT {periodLabel}, paid on-chain from your
+            own wallet. Enter your billing details to continue — they're encrypted
+            and stored apart from your payouts.
           </DialogDescription>
         </DialogHeader>
 
@@ -144,6 +155,10 @@ export function SubscribeDialog({
                 <li key={err}>{err}</li>
               ))}
             </ul>
+          ) : busy ? (
+            <p className="text-[12.5px] text-muted-foreground">
+              Keep this window open until it confirms.
+            </p>
           ) : (
             <p className="text-[12.5px] text-muted-foreground">
               One signature, paid from your connected wallet on {networkName}.
@@ -165,9 +180,22 @@ export function SubscribeDialog({
             <Button
               type="submit"
               disabled={(attempted && !ok) || busy}
-              className="flex-1"
+              className="min-w-0 flex-1 whitespace-normal"
             >
-              {submitLabel(phase)}
+              {(() => {
+                const { text, spinning } = submitContent(phase, priceUsdt)
+                return (
+                  <>
+                    {spinning ? (
+                      <Loader2
+                        className="mr-2 size-4 shrink-0 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    {text}
+                  </>
+                )
+              })()}
             </Button>
           </div>
         </form>

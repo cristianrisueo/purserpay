@@ -8,3 +8,15 @@ export function truncateAddress(address: string, lead = 6, tail = 5): string {
   if (address.length <= lead + tail + 1) return address
   return `${address.slice(0, lead)}…${address.slice(-tail)}`
 }
+
+/** Human long date, e.g. "July 10, 2026". Defaults to today. */
+export function formatLongDate(when: number | Date = new Date()): string {
+  const date = typeof when === "number" ? new Date(when) : when
+  return new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(date)
+}
+
+/** The payout heading used on the dashboard and the PDF receipt, e.g.
+ *  "Payout: July 10, 2026". One source of truth so both stay identical. */
+export function payoutTitle(when: number | Date = new Date()): string {
+  return `Payout: ${formatLongDate(when)}`
+}

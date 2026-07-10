@@ -10,7 +10,7 @@ import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { usePayout } from "@/hooks/usePayout"
-import { isPurserPayDeployed } from "@/lib/tron/subscription"
+import { payoutTitle } from "@/lib/format"
 
 export function Dashboard() {
   const payout = usePayout()
@@ -24,14 +24,13 @@ export function Dashboard() {
     disconnect,
   } = payout
 
-  // Route guard. Once the contract is deployed, the dashboard requires a connected
-  // wallet AND an active subscription — anyone else is redirected to the landing.
-  // While PurserPay is undeployed the gate is bypassed (there's nothing to enforce
-  // yet), so the dashboard stays usable pre-launch and flips strict automatically at
-  // deploy. Guarded against the initial unknown window: wait for the wallet hydrate,
-  // and for the subscription read to settle, before acting.
+  // Route guard (production, fail-closed). The contract is deployed, so the
+  // dashboard strictly requires a connected wallet AND an active on-chain
+  // subscription — anyone else is redirected to the landing. No dev bypass.
+  // Guarded against the initial unknown window: wait for the wallet hydrate, and
+  // for the subscription read to settle, before acting, so a genuine session is
+  // never falsely bounced during load.
   useEffect(() => {
-    if (!isPurserPayDeployed()) return
     if (!walletHydrated) return
     if (!connected) {
       router.replace("/")
@@ -70,7 +69,7 @@ export function Dashboard() {
       <main className="mx-auto w-full max-w-[1160px] px-6 py-8 md:px-8 md:py-12">
         <div className="mb-6 md:mb-8">
           <h1 className="text-[24px] font-semibold tracking-[-0.01em] text-foreground md:text-[28px]">
-            March payout
+            {payoutTitle()}
           </h1>
           <p className="mt-1.5 max-w-[62ch] text-[15px] leading-relaxed text-muted-foreground">
             Everyone's checked by default. Uncheck anyone you're skipping this

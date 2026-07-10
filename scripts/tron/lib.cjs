@@ -74,8 +74,15 @@ function readEnergy(info) {
 
 // --- deploy / send / call --------------------------------------------------
 
-// Deploy a constructor-less contract. Returns { address(base58), txid, energy }.
-async function deploy(tronWeb, abi, bytecode, { feeLimit = 3000 * SUN } = {}) {
+// Deploy a contract. Returns { address(base58), txid, energy }. `parameters` are
+// the constructor arguments as tronweb {type,value} entries — default [] keeps the
+// original constructor-less behavior for existing callers.
+async function deploy(
+  tronWeb,
+  abi,
+  bytecode,
+  { feeLimit = 3000 * SUN, parameters = [] } = {}
+) {
   const owner = tronWeb.defaultAddress.hex;
   const unsigned = await tronWeb.transactionBuilder.createSmartContract(
     {
@@ -85,7 +92,7 @@ async function deploy(tronWeb, abi, bytecode, { feeLimit = 3000 * SUN } = {}) {
       callValue: 0,
       userFeePercentage: 100,
       originEnergyLimit: 10_000_000, // TRON max; caller pays 100% so this is a formality
-      parameters: [],
+      parameters,
     },
     owner
   );
