@@ -22,6 +22,27 @@ brand.
 
 ---
 
+## ARCHITECTURAL SOURCE OF TRUTH — `docs/`
+
+**The [`docs/`](./docs) folder is the architectural source of truth for this project.
+Consult it BEFORE proposing or making any structural / architectural change** — anything
+touching the money path, the compliance/encryption flow, the smart contract, the data
+model, or the deploy/network configuration. Start at [`docs/README.md`](./docs/README.md);
+it indexes six topic docs (architecture, non-custodial, data-flow, compliance & encryption,
+smart contract, deployment) and an invariants cheat-sheet, each anchored to real file paths.
+
+Rules for using it:
+
+- **This file (`CLAUDE.md`) governs product philosophy, copy, and standing facts; `docs/`
+  governs the *technical architecture*.** They cross-reference each other. When both speak
+  to a point, they must agree — reconcile, don't contradict.
+- **The code is authoritative over both.** If a doc conflicts with the source, the source
+  wins — cross-check the referenced file before acting on a doc claim.
+- **Keep them in lockstep.** Any change that alters behavior `docs/` describes must update
+  the relevant doc in the SAME change. A stale doc is a bug.
+
+---
+
 ## THE ONE INVIOLABLE PRINCIPLE
 
 **Non-custodial, always. No exceptions, ever.**
@@ -257,6 +278,9 @@ If you think you need one of these, you don't — flag it to the owner first.
   device-local roster; Supabase covers account/compliance storage; tronweb covers
   chain. Reach for a new lib only when those genuinely can't do it.
 - Never use `localStorage`/`sessionStorage` for the roster — use Dexie/IndexedDB.
+- **Consult [`docs/`](./docs) before any structural/architectural change**, and update the
+  affected doc in the SAME change (see "Architectural Source of Truth" above). The code is
+  authoritative — cross-check a doc claim against the referenced file before acting on it.
 - **Write a descriptive `sprint_report.txt` after every major task** (what changed,
   decisions, guardrails honored, blockers, verification).
 
