@@ -31,7 +31,7 @@ import { pricingBullets, pricingTiers } from "./content"
 // chain-side runs until the user confirms.
 //
 // On-chain reality: PurserPay is deployed on Nile and exposes subscribe(uint8
-// planType) — 0 = monthly (250 USDT), 1 = annual (2,500 USDT). runSubscribe signs
+// planType) — 0 = monthly (150 USDT), 1 = annual (1,500 USDT). runSubscribe signs
 // the selected plan's path; the PII form is the same dialog the dashboard uses.
 
 async function loadTron() {

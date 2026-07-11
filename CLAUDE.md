@@ -30,6 +30,10 @@ brand.
 - The app builds an unsigned batch; the client's own wallet signs and sends it.
 - This is the legal moat (arm's-length, no money-transmitter license) AND the sales
   pitch. Any code, copy, or feature that breaks this is wrong by definition.
+- The PurserPay contract has ONE owner-privileged action — adjusting the two
+  subscription-fee amounts (`updateSubscriptionFees`). This is a pricing lever, not
+  custody: the owner can never touch funds, keys, broadcast, pause anything, or alter
+  the permissionless `disperse` path. Non-custodial is untouched by it.
 
 This is Tier 1 and it is absolute — the server-side architecture below changes
 nothing about it. Purser gains a backend to hide API keys, screen for OFAC, and gate
@@ -76,7 +80,7 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
   section's own **Subscribe** button is the exception: it subscribes **inline** — connect
   the wallet if needed, then `runSubscribe` from the user's own wallet (fail-closed with a
   calm "not deployed yet" until the contract ships). NOTE: only the flat monthly
-  `subscribe()` / 250-USDT path exists on-chain; the Annual tier is selection + display
+  `subscribe()` / 150-USDT path exists on-chain; the Annual tier is selection + display
   until an annual contract method is added (a contract change — out of V1 scope, flag
   first). Landing and dashboard stay 100% separated; **design tokens are unchanged**.
 - **UI:** shadcn/ui + Tailwind + Radix. Components copied into the repo (we own them).
@@ -89,9 +93,13 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
     OFAC-screening data. The server never receives the roster.
 - **Web3:** tronweb + TronLink / WalletConnect for address validation, batch build,
   and signing. (No Ledger/WebUSB in V1.)
-- **Payout contract:** our own minimal, ownerless, immutable disperse contract on TRON.
-- **Billing / gate:** an **on-chain subscription smart contract** — 250 USDT/mo or
-  2,500 USDT/yr (2 months free), paid on-chain. **No Stripe, no card, no fiat.** The
+- **Payout contract:** our own minimal disperse contract on TRON — the `disperse` path is
+  **permissionless and immutable** (no owner gate, no fee, holds nothing). The unified
+  PurserPay contract adds a single owner-only lever over the **subscription fees**
+  (`updateSubscriptionFees`); that lever never touches funds, keys, broadcast, or disperse.
+- **Billing / gate:** an **on-chain subscription smart contract** — 150 USDT/mo or
+  1,500 USDT/yr (2 months free), paid on-chain, **owner-adjustable** (not a redeploy, not a
+  proxy). **No Stripe, no card, no fiat.** The
   gate checks "active on-chain subscription?" via a Vercel route handler; magic-link
   auth (Supabase Auth `signInWithOtp`) stays. The gate never sees the roster or funds.
 - **Deploy:** single repo, Vercel (Next.js runtime + serverless / edge functions).
@@ -190,7 +198,7 @@ next.
 3. **OFAC middleware.** Server-side recipient screening before a batch can be built;
    salted-hashed persistence only; a hit blocks the batch.
 4. **On-chain subscription.** Swap the billing gate to the subscription smart contract
-   (250 USDT/mo or 2,500 USDT/yr). Retire Stripe entirely.
+   (150 USDT/mo or 1,500 USDT/yr). Retire Stripe entirely.
 5. **Post-migration copy reconciliation.** Only after the port is verified 1:1, open a
    dedicated copy pass to update the frozen landing lines (see Pending Reconciliation).
 
@@ -201,12 +209,16 @@ next.
 - Chain: **TRON only**, token **USDT (TRC20)**. Multichain does NOT exist yet — don't
   build for or promise Base/Arbitrum/etc.
 - Wallets in V1: **TronLink + WalletConnect**. (No Ledger yet.)
-- Pricing: **250 USDT/month or 2,500 USDT/year** (2 months free), paid **on-chain via
-  smart contract** — no fiat, no card, no Stripe.
+- Pricing: **150 USDT/month or 1,500 USDT/year** (2 months free), paid **on-chain via
+  smart contract** — no fiat, no card, no Stripe. The two fee amounts are **owner-adjustable
+  on-chain** (`updateSubscriptionFees`) — no redeploy, no proxy; custody is never affected.
 - Storage: the **roster stays device-local** (IndexedDB); **account-holder PII is
   stored server-side encrypted** (pgcrypto AES-256 — dissociation); recipient addresses
   are salted-hashed for OFAC. Purser stores nothing it can read.
-- The disperse contract is **ours, ownerless, immutable** — not a third party's.
+- The contract is **ours** (not a third party's). Its **`disperse` path is permissionless
+  and immutable** and it never takes custody. The **only** owner-privileged action is
+  adjusting the **subscription fees** (`updateSubscriptionFees` / `transferOwnership`) —
+  fee-only, and it can never reach funds, keys, broadcast, pause, or disperse.
 - The batch is **atomic**: all recipients paid in one tx, or none. No partial payout.
   Check balance ≥ sum-of-selected BEFORE enabling "Pay all"; if short, lock the button
   and say how much is missing — never silently drop payees.
@@ -263,7 +275,7 @@ lines still reflect the old model and must be reconciled in a dedicated copy pas
   "Your data never leaves your machine."
 - `src/components/landing/content.tsx` (privacy FAQ) — reconciled to the same
   device-local roster framing; no blanket "we don't store it."
-- `src/components/landing/PricingSection.tsx` — now **250 / 2,500 USDT, on-chain** (no
+- `src/components/landing/PricingSection.tsx` — now **150 / 1,500 USDT, on-chain** (no
   fiat, no card), replacing €249 / €2,490.
 
 **Still pending (non-landing — the freeze stands until their own pass):** the

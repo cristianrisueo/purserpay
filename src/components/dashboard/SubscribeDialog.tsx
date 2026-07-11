@@ -23,7 +23,7 @@ type SubscribeDialogProps = {
   phase: SubscribePhase
   error: PurserError | null
   networkName: string
-  /** Plan price in whole USDT (250 monthly / 2,500 annual). Defaults to monthly so
+  /** Plan price in whole USDT (150 monthly / 1,500 annual). Defaults to monthly so
    *  the dashboard paywall caller stays unchanged. */
   priceUsdt?: number
   /** Cadence word for the copy ("a month" / "a year"). Defaults to monthly. */

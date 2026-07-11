@@ -1,13 +1,14 @@
 import { Section } from "./Section"
 import { Eyebrow } from "./Eyebrow"
 import { ReceiptPreview } from "./ReceiptPreview"
+import { VideoWalkthrough } from "./VideoWalkthrough"
 import { modules, type Module } from "./content"
 
 // Bloques 1–4 — the workflow (#how). A single vertical stack of full-width rows,
-// framed by clean 1px hairlines (gap-px over the border colour). Modules 01–03
+// framed by clean 1px hairlines (gap-px over the border colour). All four modules
 // share one symmetric 50/50 rhythm on desktop — copy on the left, the visual on
-// the right (the pair of check cards for 01–02, the static receipt preview for
-// 03). Module 04 is a full-width structural 16:9 slot for the walkthrough video.
+// the right: the pair of check cards for 01–02, the static receipt preview for 03,
+// and a compact 16:9 walkthrough thumbnail for 04 that opens a lightbox video.
 export function Modules() {
   return (
     <Section id="how" band>
@@ -58,27 +59,9 @@ function ModuleCell({ module: m }: { module: Module }) {
   const kind = moduleKind(m)
   const cell = "bg-card p-[clamp(24px,3.2vw,36px)]"
 
-  // Module 04 — full-width copy over a structural 16:9 walkthrough slot.
-  if (kind === "video") {
-    return (
-      <div className={cell}>
-        <ModuleHead module={m} />
-        <div className="mt-6 flex aspect-video w-full items-center justify-center rounded-lg border border-border bg-bg-band">
-          <div className="flex flex-col items-center gap-3 text-muted-foreground">
-            <span className="flex size-14 items-center justify-center rounded-full border border-border bg-card shadow-[0_1px_2px_rgba(17,16,20,0.06)]">
-              <span className="ml-1 border-y-[9px] border-l-[15px] border-y-transparent border-l-primary" />
-            </span>
-            <span className="font-mono text-[11px] tracking-[0.12em]">
-              walkthrough · 5 min
-            </span>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  // Modules 01–03 — one symmetric 50/50 shell: copy left, visual right (desktop).
-  // The visual is the pair of check cards (points) or the static receipt (preview).
+  // One symmetric 50/50 shell for all four modules: copy left, visual right
+  // (desktop). The right column is the pair of check cards (points), the static
+  // receipt (preview), or the walkthrough thumbnail that opens a lightbox (video).
   // Points carry an optional marker: ✓ (single), ✓✓ (paid-before), or none for a
   // descriptive property that isn't a verification status.
   return (
@@ -88,7 +71,9 @@ function ModuleCell({ module: m }: { module: Module }) {
           <ModuleHead module={m} />
         </div>
 
-        {kind === "preview" ? (
+        {kind === "video" ? (
+          <VideoWalkthrough label="walkthrough · 5 min" />
+        ) : kind === "preview" ? (
           <ReceiptPreview />
         ) : (
           m.points && (

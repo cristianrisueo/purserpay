@@ -16,7 +16,7 @@ const { TronWeb } = require("tronweb");
 const FULL_HOST = "https://nile.trongrid.io";
 
 // --- addresses (the PHASE 2 test vector) -----------------------------------
-const PURSERPAY = "THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c";
+const PURSERPAY = "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG";
 const USDT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
 const WALLET2 = "THfX1kFnhmPzA3dezaXy7EpXMaLYrJnEzi"; // tester
 const TREASURY = "TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2"; // Wallet 1 / treasury
@@ -101,9 +101,9 @@ async function main() {
   }
 
   console.log("\nExpected deltas (guidance — diff a before/after run):");
-  console.log("  TC2 monthly subscribe: Wallet2 -250, Treasury +250, active=true, ~30d");
+  console.log("  TC2 monthly subscribe: Wallet2 -150, Treasury +150, active=true, ~30d");
   console.log("  TC4 disperse 2,500:    Wallet2 -2,500, Luna +500, Marco +1,000, Priya +1,000");
-  console.log("  TC5 annual subscribe:  Wallet2 -2,500, Treasury +2,500, expiry ~365d from now");
+  console.log("  TC5 annual subscribe:  Wallet2 -1,500, Treasury +1,500, expiry ~365d from now");
 }
 
 main().catch((e) => {

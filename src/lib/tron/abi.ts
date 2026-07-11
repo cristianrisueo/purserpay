@@ -56,7 +56,7 @@ export const DISPERSE_ABI: AbiFragment[] = [
       { name: "totalAmount", type: "uint256", indexed: false },
     ],
   },
-  // --- subscribe: multi-tier (plan 0 = 250/30d, plan 1 = 2,500/365d) ---
+  // --- subscribe: multi-tier (plan 0 = 150/30d, plan 1 = 1,500/365d) ---
   {
     type: "function",
     name: "subscribe",
@@ -74,11 +74,43 @@ export const DISPERSE_ABI: AbiFragment[] = [
       { name: "expirationTime", type: "uint256", indexed: false },
     ],
   },
+  // --- owner administration (fee governance only — never funds/keys/disperse) ---
+  {
+    type: "function",
+    name: "updateSubscriptionFees",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "_newMonthly", type: "uint256" }, { name: "_newAnnual", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "transferOwnership",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "newOwner", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "event",
+    name: "SubscriptionFeesUpdated",
+    inputs: [
+      { name: "newMonthly", type: "uint256", indexed: false },
+      { name: "newAnnual", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "OwnershipTransferred",
+    inputs: [
+      { name: "previousOwner", type: "address", indexed: true },
+      { name: "newOwner", type: "address", indexed: true },
+    ],
+  },
   // --- read-only surface (subscription state, immutables, constants) ---
   { type: "function", name: "isSubscriptionActive", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ type: "bool" }] },
   { type: "function", name: "subscriptionExpiresAt", stateMutability: "view", inputs: [{ name: "account", type: "address" }], outputs: [{ type: "uint256" }] },
   { type: "function", name: "treasuryWallet", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "usdt", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "owner", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "SUBSCRIPTION_PRICE", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "SUBSCRIPTION_PERIOD", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "SUBSCRIPTION_PRICE_ANNUAL", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
@@ -92,6 +124,7 @@ export const DISPERSE_ABI: AbiFragment[] = [
   { type: "error", name: "TransferFailed", inputs: [{ name: "token", type: "address" }, { name: "from", type: "address" }, { name: "to", type: "address" }, { name: "amount", type: "uint256" }] },
   { type: "error", name: "ZeroAddressConfig", inputs: [] },
   { type: "error", name: "InvalidPlan", inputs: [{ name: "planType", type: "uint8" }] },
+  { type: "error", name: "NotOwner", inputs: [] },
 ]
 
 /** Preferred alias for the full contract ABI. Points at the same array as

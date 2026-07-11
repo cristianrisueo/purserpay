@@ -24,19 +24,22 @@ interface ITRC20 {
  *             funds retained. This is the compliance moat: Purser has zero control
  *             over user funds.
  *           - subscribe(planType): the flat monetization. Pulls EXACTLY the plan's
- *             price (250 USDT monthly / 2,500 USDT annual) from the subscriber and
- *             forwards it, in the same transaction, to an immutable cold treasury.
+ *             current price (150 USDT monthly / 1,500 USDT annual at deploy) from the
+ *             subscriber and forwards it, in the same transaction, to a cold treasury.
  *
- * @dev    Ownerless and immutable by design: no owner, no admin role, no pause, no
- *         withdraw, no upgrade path, no payable/receive/fallback. `usdt` and
- *         `treasuryWallet` are set once in the constructor and can never change.
- *         The contract never takes custody of any token — every transfer is a direct
- *         payer -> recipient (or subscriber -> treasury) move, so its own token
- *         balance is invariably zero.
+ * @dev    Non-custodial and no-proxy by design: no withdraw, no upgrade path, no
+ *         payable/receive/fallback, and the contract never takes custody of any token —
+ *         every transfer is a direct payer -> recipient (or subscriber -> treasury)
+ *         move, so its own token balance is invariably zero. `usdt` and `treasuryWallet`
+ *         are immutable (set once in the constructor, can never change) and disperse() is
+ *         permissionless (ownerless — no privileged caller). The SOLE privileged action is
+ *         the `owner` adjusting the two subscription-fee amounts via updateSubscriptionFees;
+ *         that power can never touch funds, keys, broadcast, pause anything, or alter the
+ *         disperse path.
  */
 contract PurserPay {
     // -------------------------------------------------------------------------
-    // Immutable configuration (no admin keys — set once, forever)
+    // Immutable configuration (token + treasury — set once, forever)
     // -------------------------------------------------------------------------
 
     /// @notice The one token subscriptions are paid in (USDT-TRC20 on mainnet).
@@ -46,17 +49,29 @@ contract PurserPay {
     address public immutable treasuryWallet;
 
     // -------------------------------------------------------------------------
+    // Ownership (the ONLY admin key — governs subscription fees, nothing else)
+    // -------------------------------------------------------------------------
+
+    /// @notice The sole privileged account. Can adjust the subscription fees and
+    ///         transfer its own role — and nothing else. It can never touch funds,
+    ///         keys, broadcast, pause, or the permissionless disperse() path.
+    address public owner;
+
+    // -------------------------------------------------------------------------
     // Subscription economics (flat fee — NO percentage of any volume)
     // -------------------------------------------------------------------------
 
-    /// @notice Monthly (plan 0) price: 250 USDT, 6 decimals.
-    uint256 public constant SUBSCRIPTION_PRICE = 250 * 10 ** 6;
+    /// @notice Monthly (plan 0) price in USDT base units (6 decimals). Owner-adjustable
+    ///         via updateSubscriptionFees; initialized to 150 USDT at deploy.
+    uint256 public SUBSCRIPTION_PRICE;
 
     /// @notice Monthly (plan 0) period.
     uint256 public constant SUBSCRIPTION_PERIOD = 30 days;
 
-    /// @notice Annual (plan 1) price: 2,500 USDT, 6 decimals (two months free vs. monthly).
-    uint256 public constant SUBSCRIPTION_PRICE_ANNUAL = 2500 * 10 ** 6;
+    /// @notice Annual (plan 1) price in USDT base units. Owner-adjustable via
+    ///         updateSubscriptionFees; initialized to 1,500 USDT at deploy (two months
+    ///         free vs. monthly).
+    uint256 public SUBSCRIPTION_PRICE_ANNUAL;
 
     /// @notice Annual (plan 1) period.
     uint256 public constant SUBSCRIPTION_PERIOD_ANNUAL = 365 days;
@@ -71,6 +86,12 @@ contract PurserPay {
 
     /// @notice Emitted once per successful subscription payment.
     event SubscriptionPaid(address indexed subscriber, uint256 amount, uint256 timestamp, uint256 expirationTime);
+
+    /// @notice Emitted when the owner changes the subscription fees.
+    event SubscriptionFeesUpdated(uint256 newMonthly, uint256 newAnnual);
+
+    /// @notice Emitted when ownership is transferred (including the initial constructor grant).
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     /// @notice Emitted once per successful batch. Per-recipient traceability is left
     ///         to the token's own Transfer events. Signature preserved from the prior
@@ -92,6 +113,18 @@ contract PurserPay {
     error ZeroAddressConfig();
     /// @dev subscribe() called with an unknown plan (only 0 = monthly, 1 = annual exist).
     error InvalidPlan(uint8 planType);
+    /// @dev An owner-only function was called by a non-owner.
+    error NotOwner();
+
+    // -------------------------------------------------------------------------
+    // Modifiers
+    // -------------------------------------------------------------------------
+
+    /// @dev Restricts a call to {owner}. The owner governs only the subscription fees.
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert NotOwner();
+        _;
+    }
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -100,6 +133,8 @@ contract PurserPay {
     /**
      * @param _usdt           The USDT-TRC20 token subscriptions are charged in.
      * @param _treasuryWallet The cold wallet subscription fees are forwarded to.
+     * @dev   The deployer becomes {owner}. Subscription fees start at 150 USDT monthly /
+     *        1,500 USDT annual and can later be adjusted by the owner.
      */
     constructor(address _usdt, address _treasuryWallet) {
         if (_usdt == address(0) || _treasuryWallet == address(0)) {
@@ -107,6 +142,12 @@ contract PurserPay {
         }
         usdt = _usdt;
         treasuryWallet = _treasuryWallet;
+
+        owner = msg.sender;
+        emit OwnershipTransferred(address(0), msg.sender);
+
+        SUBSCRIPTION_PRICE = 150 * 10 ** 6;
+        SUBSCRIPTION_PRICE_ANNUAL = 1500 * 10 ** 6;
     }
 
     // -------------------------------------------------------------------------
@@ -119,8 +160,9 @@ contract PurserPay {
      *         {treasuryWallet}.
      * @param  planType 0 = monthly ({SUBSCRIPTION_PRICE} / {SUBSCRIPTION_PERIOD}),
      *         1 = annual ({SUBSCRIPTION_PRICE_ANNUAL} / {SUBSCRIPTION_PERIOD_ANNUAL}).
-     *         Any other value reverts {InvalidPlan} — prices/periods are hardcoded
-     *         constants, so no admin can add or alter a plan (still ownerless).
+     *         Any other value reverts {InvalidPlan} — the set of plans is fixed (0/1);
+     *         only the owner may adjust a plan's PRICE (never add/remove a plan, never
+     *         alter a period), and the charge is always read live from storage.
      * @dev    The caller must have approved this contract for at least the plan's
      *         price on {usdt}. If the transfer fails (insufficient balance or
      *         allowance), the whole transaction reverts and no subscription is
@@ -154,6 +196,36 @@ contract PurserPay {
     ///         for the off-chain gate.
     function isSubscriptionActive(address account) external view returns (bool) {
         return subscriptionExpiresAt[account] > block.timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Owner administration (subscription fees only — never funds/keys/disperse)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @notice Set the monthly and annual subscription prices (USDT base units, 6 dp).
+     *         Applies to every subsequent subscribe(); existing subscriptions and the
+     *         disperse path are untouched. This is the ONLY value the owner controls —
+     *         it can never move funds, hold custody, pause, or alter disperse.
+     * @param  _newMonthly New plan-0 price in base units.
+     * @param  _newAnnual  New plan-1 price in base units.
+     */
+    function updateSubscriptionFees(uint256 _newMonthly, uint256 _newAnnual) external onlyOwner {
+        SUBSCRIPTION_PRICE = _newMonthly;
+        SUBSCRIPTION_PRICE_ANNUAL = _newAnnual;
+        emit SubscriptionFeesUpdated(_newMonthly, _newAnnual);
+    }
+
+    /**
+     * @notice Transfer the owner role. Guards against the zero address so fee control
+     *         can never be permanently locked. (There is no renounce.)
+     * @param  newOwner The account that will hold the owner role.
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddressConfig();
+        address previous = owner;
+        owner = newOwner;
+        emit OwnershipTransferred(previous, newOwner);
     }
 
     // -------------------------------------------------------------------------

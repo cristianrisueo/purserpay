@@ -130,17 +130,22 @@ async function main() {
   console.log("\nVerifying immutables on-chain…");
   const usdtHex = await L.constCall(tronWeb, address, "usdt()", []);
   const treasuryHex = await L.constCall(tronWeb, address, "treasuryWallet()", []);
+  const ownerHex = await L.constCall(tronWeb, address, "owner()", []);
   const priceMonthly = await L.readUint(tronWeb, address, "SUBSCRIPTION_PRICE()", []);
   const priceAnnual = await L.readUint(tronWeb, address, "SUBSCRIPTION_PRICE_ANNUAL()", []);
   const usdtBack = addrFromWord(tronWeb, usdtHex);
   const treasuryBack = addrFromWord(tronWeb, treasuryHex);
+  const ownerBack = addrFromWord(tronWeb, ownerHex);
 
   console.log(`  usdt():                 ${usdtBack} ${usdtBack === USDT_ADDRESS ? "✓" : "✗ MISMATCH"}`);
   console.log(
     `  treasuryWallet():       ${treasuryBack} ${treasuryBack === TREASURY_WALLET ? "✓" : "✗ MISMATCH"}`
   );
-  console.log(`  SUBSCRIPTION_PRICE():        ${priceMonthly.toString()} ${priceMonthly === 250_000_000n ? "✓ (250e6)" : "✗"}`);
-  console.log(`  SUBSCRIPTION_PRICE_ANNUAL(): ${priceAnnual.toString()} ${priceAnnual === 2_500_000_000n ? "✓ (2500e6)" : "✗"}`);
+  console.log(
+    `  owner():                ${ownerBack} ${ownerBack === EXPECTED_DEPLOYER ? "✓ (deployer)" : "✗ MISMATCH"}`
+  );
+  console.log(`  SUBSCRIPTION_PRICE():        ${priceMonthly.toString()} ${priceMonthly === 150_000_000n ? "✓ (150e6)" : "✗"}`);
+  console.log(`  SUBSCRIPTION_PRICE_ANNUAL(): ${priceAnnual.toString()} ${priceAnnual === 1_500_000_000n ? "✓ (1500e6)" : "✗"}`);
 
   console.log("\nNext: set PURSERPAY_ADDRESS and DISPERSE_ADDRESS in src/lib/tron/config.ts to:");
   console.log(`  ${address}`);

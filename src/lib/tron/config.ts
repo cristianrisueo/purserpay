@@ -36,13 +36,16 @@ export const NETWORK: TronNetwork = {
 //   hostMatch: "api.trongrid", explorer: "https://tronscan.org"
 //   USDT_ADDRESS (real): TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
 
-/** Our ownerless, immutable disperse contract (Nile). Now the unified PurserPay
- *  contract (disperse + subscribe) — its disperse/Dispersed/error selectors are
- *  byte-for-byte preserved from the prior PurseDisperseUsdt, so the money path is
- *  untouched. Same address as PURSERPAY_ADDRESS: one contract serves both.
+/** Our disperse contract (Nile). Now the unified PurserPay contract (disperse +
+ *  subscribe) — its disperse/Dispersed/error selectors are byte-for-byte preserved
+ *  from the prior PurseDisperseUsdt, so the money path is untouched. The disperse path
+ *  is permissionless and immutable; the contract has an owner ONLY over subscription
+ *  fees. Same address as PURSERPAY_ADDRESS: one contract serves both.
  *  (Superseded deploys: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 — wrong token;
- *  TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x — disperse-only.) */
-export const DISPERSE_ADDRESS: string = "THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c"
+ *  TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x — disperse-only;
+ *  THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c — old price 250/2,500;
+ *  TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY — immutable-fee version, before owner-adjustable fees.) */
+export const DISPERSE_ADDRESS: string = "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG"
 
 /** Sentinel for the pre-deployment state. `isPurserPayDeployed()` compares
  *  against this — while PURSERPAY_ADDRESS equals it, the subscription gate is
@@ -52,30 +55,35 @@ export const DISPERSE_ADDRESS: string = "THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c"
 export const PENDING_DEPLOYMENT_ADDRESS: string = "T_PENDING_DEPLOYMENT_ADDRESS"
 
 /** The deployed PurserPay contract (Nile) that carries the on-chain subscription
- *  (subscribe / isSubscriptionActive) AND disperse. One unified, ownerless,
- *  immutable contract serves both — DISPERSE_ADDRESS points at the same address.
+ *  (subscribe / isSubscriptionActive) AND disperse. One unified contract serves both —
+ *  DISPERSE_ADDRESS points at the same address. The disperse path is permissionless and
+ *  immutable; the owner (the deployer) can adjust ONLY the subscription fees via
+ *  updateSubscriptionFees — never funds, keys, broadcast, pause, or disperse.
  *  Constructor immutables: usdt = TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile USDT,
  *  Tether USD, 6dp), treasuryWallet = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2.
- *  Deploy tx: df0032eae7d52f6d9e04d3f5628c85e993a62e26367c5f9c05c4151840bc28dd.
- *  (Superseded: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 pointed at the wrong token.) */
-export const PURSERPAY_ADDRESS: string = "THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c"
+ *  owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer). Fees at deploy: 150 / 1,500.
+ *  Deploy tx: 2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d.
+ *  (Superseded: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 pointed at the wrong token;
+ *  THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c carried the old 250/2,500 price;
+ *  TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY had immutable fees, no owner-adjustable fees.) */
+export const PURSERPAY_ADDRESS: string = "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG"
 
 /** Subscription plan selector — matches the contract's `subscribe(uint8 planType)`.
- *  0 = monthly (250 / 30d), 1 = annual (2,500 / 365d). */
+ *  0 = monthly (150 / 30d), 1 = annual (1,500 / 365d). */
 export type SubscriptionPlan = 0 | 1
 
 /** The monthly (plan 0) price in USDT base units (6 decimals). Matches the immutable
- *  contract constant `SUBSCRIPTION_PRICE = 250 * 10**6`. */
-export const SUBSCRIPTION_PRICE_UNITS = 250_000_000n
+ *  contract constant `SUBSCRIPTION_PRICE = 150 * 10**6`. */
+export const SUBSCRIPTION_PRICE_UNITS = 150_000_000n
 
 /** The monthly (plan 0) price in whole USDT, for display (e.g. the paywall button). */
-export const SUBSCRIPTION_PRICE_USDT = 250
+export const SUBSCRIPTION_PRICE_USDT = 150
 
 /** The annual (plan 1) price in USDT base units. Matches `SUBSCRIPTION_PRICE_ANNUAL`. */
-export const SUBSCRIPTION_PRICE_ANNUAL_UNITS = 2_500_000_000n
+export const SUBSCRIPTION_PRICE_ANNUAL_UNITS = 1_500_000_000n
 
 /** The annual (plan 1) price in whole USDT, for display. */
-export const SUBSCRIPTION_PRICE_ANNUAL_USDT = 2500
+export const SUBSCRIPTION_PRICE_ANNUAL_USDT = 1500
 
 /** Base units for a plan. */
 export function priceUnitsForPlan(plan: SubscriptionPlan): bigint {

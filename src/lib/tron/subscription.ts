@@ -125,7 +125,7 @@ export type SubscribeOutcome = { approveTxid?: string; txid: string }
  * that price to the treasury and records the expiry). Confirms each tx by receipt,
  * exactly like the disperse path, and decodes any revert into a calm message.
  *
- * @param plan 0 = monthly (250 USDT / 30d), 1 = annual (2,500 USDT / 365d).
+ * @param plan 0 = monthly (150 USDT / 30d), 1 = annual (1,500 USDT / 365d).
  *
  * Throws a calm PurserError if PurserPay isn't deployed yet — nothing is signed.
  */

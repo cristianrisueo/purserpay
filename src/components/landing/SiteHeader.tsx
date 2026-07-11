@@ -3,7 +3,6 @@ import { LandingWalletCta } from "./LandingWalletCta"
 // Root-relative anchors so the shared header navigates correctly from any route
 // (e.g. /legal) — on the landing these stay same-document hash scrolls (no reload).
 const navLinks = [
-  { label: "Why us", href: "/#why" },
   { label: "How it works", href: "/#how" },
   { label: "Pricing", href: "/#pricing" },
   { label: "FAQs", href: "/#faq" },

@@ -81,9 +81,9 @@ contract PurserPayTest is Test {
     address internal subscriber;
     address internal payer;
 
-    uint256 internal constant PRICE = 250 * 10 ** 6; // exact monthly price (plan 0)
-    uint256 internal constant PRICE_ANNUAL = 2500 * 10 ** 6; // exact annual price (plan 1)
-    uint256 internal constant UNDERPAY = 249 * 10 ** 6; // one dollar short
+    uint256 internal constant PRICE = 150 * 10 ** 6; // exact monthly price (plan 0)
+    uint256 internal constant PRICE_ANNUAL = 1500 * 10 ** 6; // exact annual price (plan 1)
+    uint256 internal constant UNDERPAY = 149 * 10 ** 6; // one dollar short
 
     // Local copies of the contract's events, for vm.expectEmit matching.
     event SubscriptionPaid(
@@ -92,6 +92,8 @@ contract PurserPayTest is Test {
     event Dispersed(
         address indexed payer, address indexed token, uint256 recipientCount, uint256 totalAmount
     );
+    event SubscriptionFeesUpdated(uint256 newMonthly, uint256 newAnnual);
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
 
     function setUp() public {
         treasury = makeAddr("treasury");
@@ -115,6 +117,11 @@ contract PurserPayTest is Test {
         assertEq(purser.SUBSCRIPTION_PERIOD_ANNUAL(), 365 days);
     }
 
+    /// @dev The deployer (this test contract) becomes the owner.
+    function test_Constructor_SetsOwner() public {
+        assertEq(purser.owner(), address(this), "deployer is owner");
+    }
+
     function test_Constructor_RevertsOnZeroUsdt() public {
         vm.expectRevert(PurserPay.ZeroAddressConfig.selector);
         new PurserPay(address(0), treasury);
@@ -126,10 +133,10 @@ contract PurserPayTest is Test {
     }
 
     // -------------------------------------------------------------------------
-    // subscribe() — exact 250 passes, 249 reverts
+    // subscribe() — exact 150 passes, 149 reverts
     // -------------------------------------------------------------------------
 
-    function test_Subscribe_Exact250_Succeeds() public {
+    function test_Subscribe_Exact150_Succeeds() public {
         usdt.mint(subscriber, PRICE);
         vm.prank(subscriber);
         usdt.approve(address(purser), PRICE);
@@ -142,16 +149,16 @@ contract PurserPayTest is Test {
         vm.prank(subscriber);
         purser.subscribe(0);
 
-        assertEq(usdt.balanceOf(treasury), PRICE, "treasury funded with exactly 250");
+        assertEq(usdt.balanceOf(treasury), PRICE, "treasury funded with exactly 150");
         assertEq(usdt.balanceOf(subscriber), 0, "subscriber fully debited");
         assertEq(usdt.balanceOf(address(purser)), 0, "contract holds nothing");
         assertEq(purser.subscriptionExpiresAt(subscriber), expectedExpiry, "expiry persisted");
         assertTrue(purser.isSubscriptionActive(subscriber), "subscription active");
     }
 
-    /// @dev 249 USDT of balance (allowance ample) → transfer fails → whole tx reverts,
+    /// @dev 149 USDT of balance (allowance ample) → transfer fails → whole tx reverts,
     ///      and crucially NO subscription is granted (CEI: the expiry write rolls back).
-    function test_Subscribe_With249Balance_Reverts() public {
+    function test_Subscribe_With149Balance_Reverts() public {
         usdt.mint(subscriber, UNDERPAY);
         vm.prank(subscriber);
         usdt.approve(address(purser), PRICE);
@@ -169,8 +176,8 @@ contract PurserPayTest is Test {
         assertFalse(purser.isSubscriptionActive(subscriber));
     }
 
-    /// @dev 249 USDT of allowance (balance ample) → can't subscribe by approving less.
-    function test_Subscribe_With249Allowance_Reverts() public {
+    /// @dev 149 USDT of allowance (balance ample) → can't subscribe by approving less.
+    function test_Subscribe_With149Allowance_Reverts() public {
         usdt.mint(subscriber, 1000 * 10 ** 6);
         vm.prank(subscriber);
         usdt.approve(address(purser), UNDERPAY);
@@ -187,8 +194,8 @@ contract PurserPayTest is Test {
         assertEq(purser.subscriptionExpiresAt(subscriber), 0);
     }
 
-    /// @dev Even with a huge allowance, subscribe() pulls EXACTLY 250 — never more.
-    function test_Subscribe_PullsExactly250_NeverMore() public {
+    /// @dev Even with a huge allowance, subscribe() pulls EXACTLY 150 — never more.
+    function test_Subscribe_PullsExactly150_NeverMore() public {
         usdt.mint(subscriber, 1000 * 10 ** 6);
         vm.prank(subscriber);
         usdt.approve(address(purser), 1000 * 10 ** 6);
@@ -196,12 +203,12 @@ contract PurserPayTest is Test {
         vm.prank(subscriber);
         purser.subscribe(0);
 
-        assertEq(usdt.balanceOf(treasury), PRICE, "exactly 250 forwarded");
-        assertEq(usdt.balanceOf(subscriber), 750 * 10 ** 6, "only 250 pulled");
+        assertEq(usdt.balanceOf(treasury), PRICE, "exactly 150 forwarded");
+        assertEq(usdt.balanceOf(subscriber), 1000 * 10 ** 6 - PRICE, "only 150 pulled");
         assertEq(
             usdt.allowance(subscriber, address(purser)),
             1000 * 10 ** 6 - PRICE,
-            "only 250 spent from allowance"
+            "only 150 spent from allowance"
         );
     }
 
@@ -227,8 +234,8 @@ contract PurserPayTest is Test {
     // subscribe(planType) — annual tier (plan 1) and invalid-plan revert
     // -------------------------------------------------------------------------
 
-    /// @dev Plan 1 pulls EXACTLY 2,500 USDT and grants a 365-day period.
-    function test_Subscribe_Annual_Pulls2500_Adds365Days() public {
+    /// @dev Plan 1 pulls EXACTLY 1,500 USDT and grants a 365-day period.
+    function test_Subscribe_Annual_Pulls1500_Adds365Days() public {
         usdt.mint(subscriber, PRICE_ANNUAL);
         vm.prank(subscriber);
         usdt.approve(address(purser), PRICE_ANNUAL);
@@ -241,7 +248,7 @@ contract PurserPayTest is Test {
         vm.prank(subscriber);
         purser.subscribe(1);
 
-        assertEq(usdt.balanceOf(treasury), PRICE_ANNUAL, "treasury funded with exactly 2,500");
+        assertEq(usdt.balanceOf(treasury), PRICE_ANNUAL, "treasury funded with exactly 1,500");
         assertEq(usdt.balanceOf(subscriber), 0, "subscriber fully debited");
         assertEq(usdt.balanceOf(address(purser)), 0, "contract holds nothing");
         assertEq(expectedExpiry, block.timestamp + 365 days, "365-day period");
@@ -249,8 +256,8 @@ contract PurserPayTest is Test {
         assertTrue(purser.isSubscriptionActive(subscriber), "subscription active");
     }
 
-    /// @dev The annual plan pulls EXACTLY 2,500 even with a larger allowance — never more.
-    function test_Subscribe_Annual_PullsExactly2500_NeverMore() public {
+    /// @dev The annual plan pulls EXACTLY 1,500 even with a larger allowance — never more.
+    function test_Subscribe_Annual_PullsExactly1500_NeverMore() public {
         usdt.mint(subscriber, 5000 * 10 ** 6);
         vm.prank(subscriber);
         usdt.approve(address(purser), 5000 * 10 ** 6);
@@ -258,8 +265,8 @@ contract PurserPayTest is Test {
         vm.prank(subscriber);
         purser.subscribe(1);
 
-        assertEq(usdt.balanceOf(treasury), PRICE_ANNUAL, "exactly 2,500 forwarded");
-        assertEq(usdt.balanceOf(subscriber), 2500 * 10 ** 6, "only 2,500 pulled");
+        assertEq(usdt.balanceOf(treasury), PRICE_ANNUAL, "exactly 1,500 forwarded");
+        assertEq(usdt.balanceOf(subscriber), 5000 * 10 ** 6 - PRICE_ANNUAL, "only 1,500 pulled");
     }
 
     /// @dev Any plan other than 0/1 reverts InvalidPlan — nothing charged, no access granted.
@@ -275,6 +282,80 @@ contract PurserPayTest is Test {
         assertEq(usdt.balanceOf(treasury), 0, "no payment on an invalid plan");
         assertEq(purser.subscriptionExpiresAt(subscriber), 0, "no subscription granted");
         assertFalse(purser.isSubscriptionActive(subscriber));
+    }
+
+    // -------------------------------------------------------------------------
+    // updateSubscriptionFees / transferOwnership — owner-only fee governance
+    // -------------------------------------------------------------------------
+
+    /// @dev The owner sets new fees, the event fires, both getters update, and a
+    ///      subsequent subscribe pulls the NEW price (proving it's a live storage read).
+    function test_UpdateSubscriptionFees_OwnerUpdatesEmitsAndCharges() public {
+        uint256 newMonthly = 200 * 10 ** 6;
+        uint256 newAnnual = 2000 * 10 ** 6;
+
+        vm.expectEmit(false, false, false, true, address(purser));
+        emit SubscriptionFeesUpdated(newMonthly, newAnnual);
+
+        // The test contract is the owner (it deployed purser in setUp).
+        purser.updateSubscriptionFees(newMonthly, newAnnual);
+
+        assertEq(purser.SUBSCRIPTION_PRICE(), newMonthly, "monthly fee updated");
+        assertEq(purser.SUBSCRIPTION_PRICE_ANNUAL(), newAnnual, "annual fee updated");
+
+        // subscribe(0) now charges exactly the new monthly price.
+        usdt.mint(subscriber, newMonthly);
+        vm.startPrank(subscriber);
+        usdt.approve(address(purser), newMonthly);
+        purser.subscribe(0);
+        vm.stopPrank();
+
+        assertEq(usdt.balanceOf(treasury), newMonthly, "treasury charged the new price");
+        assertTrue(purser.isSubscriptionActive(subscriber), "subscription active at new price");
+    }
+
+    /// @dev Any non-owner call to updateSubscriptionFees reverts and changes nothing.
+    function test_UpdateSubscriptionFees_NonOwnerReverts() public {
+        vm.prank(subscriber);
+        vm.expectRevert(PurserPay.NotOwner.selector);
+        purser.updateSubscriptionFees(1, 1);
+
+        assertEq(purser.SUBSCRIPTION_PRICE(), PRICE, "monthly fee unchanged");
+        assertEq(purser.SUBSCRIPTION_PRICE_ANNUAL(), PRICE_ANNUAL, "annual fee unchanged");
+    }
+
+    /// @dev The owner can hand off the role; the event fires and the new owner can set fees.
+    function test_TransferOwnership_OwnerTransfersAndEmits() public {
+        vm.expectEmit(true, true, false, false, address(purser));
+        emit OwnershipTransferred(address(this), subscriber);
+        purser.transferOwnership(subscriber);
+
+        assertEq(purser.owner(), subscriber, "owner is now subscriber");
+
+        // The new owner can update fees; the old owner no longer can.
+        vm.prank(subscriber);
+        purser.updateSubscriptionFees(300 * 10 ** 6, 3000 * 10 ** 6);
+        assertEq(purser.SUBSCRIPTION_PRICE(), 300 * 10 ** 6, "new owner updated fee");
+
+        vm.expectRevert(PurserPay.NotOwner.selector);
+        purser.updateSubscriptionFees(1, 1); // old owner (this) is now unauthorized
+    }
+
+    /// @dev Non-owner cannot transfer ownership.
+    function test_TransferOwnership_NonOwnerReverts() public {
+        vm.prank(subscriber);
+        vm.expectRevert(PurserPay.NotOwner.selector);
+        purser.transferOwnership(subscriber);
+
+        assertEq(purser.owner(), address(this), "owner unchanged");
+    }
+
+    /// @dev Ownership can never be transferred to the zero address (no accidental lock).
+    function test_TransferOwnership_ZeroAddressReverts() public {
+        vm.expectRevert(PurserPay.ZeroAddressConfig.selector);
+        purser.transferOwnership(address(0));
+
+        assertEq(purser.owner(), address(this), "owner unchanged");
     }
 
     // -------------------------------------------------------------------------
@@ -514,9 +595,9 @@ contract PurserPayHandler is Test {
 
     function subscribe(uint256 seed) external {
         address sub = address(uint160(uint256(keccak256(abi.encode("sub", seed))) | 1));
-        usdt.mint(sub, 250 * 10 ** 6);
+        usdt.mint(sub, 150 * 10 ** 6);
         vm.startPrank(sub);
-        usdt.approve(address(purser), 250 * 10 ** 6);
+        usdt.approve(address(purser), 150 * 10 ** 6);
         purser.subscribe(0);
         vm.stopPrank();
     }

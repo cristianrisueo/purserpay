@@ -106,7 +106,7 @@ export const pricingTiers: PricingTier[] = [
   {
     name: "Monthly",
     plan: 0,
-    price: "250",
+    price: "150",
     unit: "USDT",
     period: "per 30 days",
     note: "Uncapped volume. Pay month to month.",
@@ -114,7 +114,7 @@ export const pricingTiers: PricingTier[] = [
   {
     name: "Annual",
     plan: 1,
-    price: "2,500",
+    price: "1,500",
     unit: "USDT",
     period: "per 365 days",
     note: "Two months free. Fixed cost, locked in.",
@@ -135,8 +135,9 @@ export type Faq = { q: string; a: string }
 // High-conviction, AEO-ready compliance FAQ: 6 razor-sharp Q&As ordered to answer a
 // non-crypto buyer's legal anxieties in sequence — custody, MSB classification, OFAC,
 // roster privacy, flat-fee posture, TRON/USDT. Copy is verbatim per owner; every claim
-// tracks CLAUDE.md (non-custodial, ownerless/immutable, salted-SHA-256 screening,
-// device-local roster, 250 USDT flat on-chain, TRON/USDT only).
+// tracks CLAUDE.md (non-custodial, permissionless/immutable disperse with owner-only
+// fee control, salted-SHA-256 screening, device-local roster, 150 USDT flat on-chain,
+// TRON/USDT only).
 export const faqs: Faq[] = [
   {
     q: "Does PurserPay custody funds at any point?",
@@ -144,7 +145,7 @@ export const faqs: Faq[] = [
   },
   {
     q: "How does this protocol avoid being classified as a Money Services Business (MSB)?",
-    a: "PurserPay is an ownerless, immutable software infrastructure. The contract has no admin keys, no pause functions, and cannot halt or alter transaction flows. Because we exert zero control over user funds and charge no percentage-based fees, we operate strictly as a technology provider, not a financial intermediary.",
+    a: "PurserPay is immutable software infrastructure. It holds no admin keys over your money: the contract cannot pause, halt, reverse, or alter payment flows, and the payout path is permissionless. The only owner-privileged action is adjusting our flat subscription fee — it can never touch your funds or your payouts. Because we exert zero control over user capital and charge no percentage-based fees, we operate strictly as a technology provider, not a financial intermediary.",
   },
   {
     q: "How does the automated sanction screening (OFAC) filter work?",
@@ -156,7 +157,7 @@ export const faqs: Faq[] = [
   },
   {
     q: "Why do you charge a flat subscription fee instead of volume-based percentages?",
-    a: "Volume-based fees penalize your growth and alter the legal posture of our contract. We charge a flat fee of 250 USDT per month, settled transparently on-chain. This keeps the core utility free to use and ensures our relationship remains strictly that of a software service.",
+    a: "Volume-based fees penalize your growth and alter the legal posture of our contract. We charge a flat fee of 150 USDT per month, settled transparently on-chain. This keeps the core utility free to use and ensures our relationship remains strictly that of a software service.",
   },
   {
     q: "Why does the protocol operate exclusively with USDT on the TRON network?",
