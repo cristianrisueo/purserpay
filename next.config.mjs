@@ -8,6 +8,25 @@ const nextConfig = {
   // This makes the SSR crash impossible regardless of which module pulls tronweb in.
   // Server-only — the client bundle (Buffer/process polyfills below) is unaffected.
   serverExternalPackages: ["tronweb"],
+  // Baseline security headers on every route (clickjacking, MIME-sniffing, referrer
+  // leakage, and HTTPS enforcement). Applied at the framework level so they cover the
+  // landing, the gated dashboard, and static assets alike.
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains; preload",
+          },
+        ],
+      },
+    ]
+  },
   webpack: (config, { webpack, isServer }) => {
     // tronweb reaches for Node globals (Buffer, process) that don't exist in the
     // browser. Provide them in the CLIENT bundle only — the direct equivalent of the
