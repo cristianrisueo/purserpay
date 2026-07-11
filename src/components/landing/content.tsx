@@ -83,7 +83,7 @@ export const modules: Module[] = [
   {
     n: "04",
     eyebrow: "watch it work",
-    title: "The five-minute walkthrough",
+    title: "The 3-minute walkthrough",
     body: "A short, unedited run through the whole thing — the happy path end to end, plus what an error actually looks like and how the checks catch it before anything is signed.",
     variant: "video",
   },

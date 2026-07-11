@@ -72,7 +72,7 @@ function ModuleCell({ module: m }: { module: Module }) {
         </div>
 
         {kind === "video" ? (
-          <VideoWalkthrough label="walkthrough · 5 min" />
+          <VideoWalkthrough label="walkthrough · 3 min" />
         ) : kind === "preview" ? (
           <ReceiptPreview />
         ) : (

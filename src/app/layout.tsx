@@ -6,8 +6,32 @@ import type { Metadata, Viewport } from "next"
 import "@/styles/globals.css"
 
 export const metadata: Metadata = {
-  title: "PurserPay | On-Chain Payouts",
+  // Resolves the relative OG/Twitter image path to an absolute URL and silences the
+  // Next.js "metadataBase not set" build warning.
+  metadataBase: new URL("https://purserpay.app"),
+  title: "PurserPay — Non-custodial payouts for distributed teams",
+  description:
+    "Pay everyone in one transfer. Your money never leaves your wallet. Your roster never leaves your device.",
   icons: { icon: "/favicon.svg" },
+  openGraph: {
+    title: "PurserPay — Non-custodial payouts for distributed teams",
+    description:
+      "Pay everyone in one transfer. Your money never leaves your wallet. Your roster never leaves your device.",
+    url: "https://purserpay.app",
+    siteName: "PurserPay",
+    images: [
+      { url: "/screen_one.png", width: 1200, height: 630, alt: "PurserPay Preview" },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "PurserPay — Non-custodial payouts for distributed teams",
+    description:
+      "Pay everyone in one transfer. Your money never leaves your wallet. Your roster never leaves your device.",
+    images: ["/screen_one.png"],
+  },
 }
 
 export const viewport: Viewport = {
@@ -21,7 +45,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   )

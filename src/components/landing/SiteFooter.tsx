@@ -12,9 +12,14 @@ export function SiteFooter() {
     <footer className="border-t border-border bg-background">
       <div className="mx-auto w-full max-w-[1160px] px-8 py-[clamp(28px,4vw,40px)]">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] items-start gap-8">
-          {/* Left — brand only */}
-          <div className="text-[18px] font-bold tracking-[-0.02em] text-foreground">
-            Purser<span className="text-primary">Pay</span>
+          {/* Left — brand + tagline */}
+          <div className="flex flex-col gap-2">
+            <div className="text-[18px] font-bold tracking-[-0.02em] text-foreground">
+              Purser<span className="text-primary">Pay</span>
+            </div>
+            <p className="max-w-[26ch] text-[13.5px] leading-[1.5] text-muted-foreground">
+              Non-custodial payouts for distributed teams
+            </p>
           </div>
 
           {/* Middle — other links */}
