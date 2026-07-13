@@ -84,11 +84,13 @@ action, zero fear, beauty = trust.
 | Chain | **TRON only**, **USDT (TRC20) only** — Nile testnet today |
 | Billing | on-chain subscription: **150 USDT/mo** or **1,500 USDT/yr** (no fiat, no Stripe) |
 | Free tier | **1 payee / payer wallet / 30 days**, forever — a mainnet smoke test. Off-chain licence gate ([`docs/07`](./docs/07-freemium-gate.md)); everything else needs the subscription. |
+| Referrals | asymmetric: a paying customer's first-paid referral banks them **one free month** (off-chain credit); the invitee pays full price. Reward == referee cost (**1:1**, self-referral is zero-margin). Behind `REFERRALS_ENABLED` ([`docs/08`](./docs/08-referrals-and-credit.md)). |
 
 - Landing `/` is server-rendered; the dashboard `/dashboard` is client-only (`ssr:false`)
   because it reads IndexedDB and the injected wallet at mount.
-- Every payout funnels through one 3-gate choke-point: **subscription → OFAC → disperse**
-  (`src/hooks/usePayout.ts`). See [`docs/03`](./docs/03-data-flow.md).
+- Every payout funnels through one 3-gate choke-point: **entitlement (subscription or
+  referral credit) → OFAC → disperse** (`src/hooks/usePayout.ts`). See
+  [`docs/03`](./docs/03-data-flow.md).
 
 ```
 src/
@@ -99,7 +101,7 @@ src/
   lib/            # db (Dexie) · crypto · receipts · supabase/ · tron/
 contracts/        # Foundry: PurserPay.sol + tests
 scripts/tron/     # deploy / verify / measure
-supabase/         # compliance schema
+supabase/         # 0001 compliance · 0002 free tier · 0003 referrals
 docs/             # ← architectural source of truth (start here)
 ```
 
@@ -124,7 +126,8 @@ networks is in [`docs/06`](./docs/06-deployment.md).
 ## Documentation map
 
 - [`docs/`](./docs) — **architectural source of truth** (architecture, data-flow,
-  compliance, contract, deployment). Start at [`docs/README.md`](./docs/README.md).
+  compliance, contract, deployment, free tier, referrals). Start at
+  [`docs/README.md`](./docs/README.md).
 - [`CLAUDE.md`](./CLAUDE.md) — product philosophy, governance rules, standing facts, the 3
   Laws of UX, and "not in V1".
 - [`SPRINTS.md`](./SPRINTS.md) — the Vite-era build log (Spanish, historical).

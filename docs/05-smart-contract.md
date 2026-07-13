@@ -104,6 +104,14 @@ initializes fees to `150e6 / 1500e6`.
 > `subscribe(1)` via `runSubscribe` (`src/lib/tron/subscription.ts`). There is no
 > "monthly-only" frontend path anymore.
 
+> **Referral credit is OFF-CHAIN — the contract is unchanged.** `subscribe()` writes
+> `expiry = now + period`, i.e. it **RESETS** the expiry (it does not add to it). The
+> referral loop ([`08`](./08-referrals-and-credit.md)) grants **off-chain, additive** credit
+> months in Supabase; the gate reads `onChainActive(this contract) || creditActiveUntil >
+> now`. The contract knows nothing about credit and is the **source of truth for
+> payments** — a referral reward only ever follows a real, verified on-chain `subscribe` tx
+> (a credit-activated month has no tx, so it never earns a reward).
+
 ## 5. Events & custom errors
 
 **Events:** `SubscriptionPaid(subscriber, amount, timestamp, expirationTime)`,

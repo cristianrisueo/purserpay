@@ -24,6 +24,11 @@ export interface WalletProvider {
   isAvailable(): boolean
   /** Prompt the user; resolve with their account or throw a calm PurserError. */
   connect(): Promise<WalletAccount>
+  /** Sign a human-readable message (TIP-191 / signMessageV2) with the connected
+   *  wallet to PROVE control of the address — no funds move, nothing is broadcast.
+   *  Used by the payout gate's wallet-control challenge. Resolves with the
+   *  signature or throws a calm PurserError (rejection / locked). */
+  signMessage(message: string): Promise<string>
   /** Best-effort local disconnect (TronLink has no real revoke — we just
    *  forget the session). */
   disconnect(): Promise<void>
@@ -74,6 +79,20 @@ const tronLinkProvider: WalletProvider = {
     return { providerId: "tronlink", provider: "TronLink", address }
   },
 
+  async signMessage(message: string) {
+    const tw = getInjectedTronWeb()
+    if (!tw) throw walletLocked()
+    try {
+      // TronLink proxies signMessageV2 to the extension (prompts the user, signs
+      // with the wallet's key — the dapp never sees it). await handles both the
+      // Promise TronLink returns and the sync string the bare lib would return.
+      return await tw.trx.signMessageV2(message)
+    } catch (e) {
+      // A rejected signature is the common case; surface it as a calm decline.
+      throw e instanceof PurserError ? e : userRejected()
+    }
+  },
+
   async disconnect() {
     // TronLink exposes no programmatic revoke; the dapp simply forgets.
   },
@@ -118,6 +137,12 @@ const walletConnectProvider: WalletProvider = {
     return Boolean(process.env.NEXT_PUBLIC_WC_PROJECT_ID)
   },
   async connect() {
+    throw new PurserError(
+      "no-wallet",
+      "WalletConnect isn't enabled yet — connect with TronLink for now."
+    )
+  },
+  async signMessage() {
     throw new PurserError(
       "no-wallet",
       "WalletConnect isn't enabled yet — connect with TronLink for now."

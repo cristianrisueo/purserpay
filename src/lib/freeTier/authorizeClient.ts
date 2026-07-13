@@ -11,10 +11,24 @@ import type { AuthzResult } from "./gate"
  *  route can return. Discriminate on `ok` then `code`. */
 export type AuthorizeResult =
   | AuthzResult
-  | { ok: false; code: "BAD_REQUEST" | "SCREENING_UNAVAILABLE" | "NETWORK_ERROR"; message?: string }
+  | {
+      ok: false
+      code:
+        | "BAD_REQUEST"
+        | "SCREENING_UNAVAILABLE"
+        | "NETWORK_ERROR"
+        | "WALLET_PROOF_REQUIRED"
+        | "WALLET_PROOF_FAILED"
+      message?: string
+    }
 
 /**
- * POST /api/payout/authorize — one round trip: OFAC + subscription + free-tier.
+ * POST /api/payout/authorize — one round trip: wallet-control proof + OFAC +
+ * subscription + free-tier. `nonce`/`signature` come from a single-use challenge
+ * (proveWalletControl); the server recovers the signer and asserts it equals
+ * `payerAddress` before touching any quota/credit — a missing/invalid proof returns
+ * a 403 (WALLET_PROOF_*), fail closed.
+ *
  * On the free path the server consumes the slot OPTIMISTICALLY before this returns,
  * so `consumedAt` (present on `mode:"free"`) must be handed to releasePayout if the
  * broadcast then fails. Any transport failure resolves to a NETWORK_ERROR (never a
@@ -22,7 +36,9 @@ export type AuthorizeResult =
  */
 export async function authorizePayout(
   payerAddress: string,
-  recipientAddresses: string[]
+  recipientAddresses: string[],
+  nonce: string,
+  signature: string
 ): Promise<AuthorizeResult> {
   try {
     const res = await fetch("/api/payout/authorize", {
@@ -32,6 +48,8 @@ export async function authorizePayout(
         payerAddress,
         recipientCount: recipientAddresses.length,
         recipientAddresses,
+        nonce,
+        signature,
       }),
     })
     const data = (await res.json().catch(() => null)) as AuthorizeResult | null

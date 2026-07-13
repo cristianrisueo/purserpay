@@ -1,3 +1,4 @@
+import { useState } from "react"
 import Link from "next/link"
 import { TriangleAlert } from "lucide-react"
 
@@ -12,8 +13,14 @@ type DashboardHeaderProps = {
   networkName: string
   account: WalletAccount | null
   balance: number | null
-  /** Subscription expiry in ms since epoch, or null when unknown / no sub. */
+  /** On-chain subscription expiry in ms since epoch (the SOLE source of truth for
+   *  paid time), or null when unknown / no sub. */
   subscriptionExpiresAt: number | null
+  /** Off-chain referral-credit window end (ISO), or null. Supabase's domain — used
+   *  ONLY to show a running free month, never as paid-time truth. */
+  creditActiveUntil?: string | null
+  /** Banked referral months awaiting consumption (0 until the summary resolves). */
+  monthsBanked?: number
   /** True when the connected wallet has no active subscription (free tier). */
   freeMode: boolean
   walletError: PurserError | null
@@ -30,16 +37,38 @@ export function DashboardHeader({
   account,
   balance,
   subscriptionExpiresAt,
+  creditActiveUntil,
+  monthsBanked,
   freeMode,
   walletError,
   onConnect,
   onDisconnect,
   onSubscribe,
 }: DashboardHeaderProps) {
-  // Same "Month day, year" format as the payout title — one source of truth
-  // (formatLongDate), so every date in the app reads identically.
-  const activeUntil =
-    subscriptionExpiresAt != null ? formatLongDate(subscriptionExpiresAt) : null
+  // THE single place entitlement is stated — one line the user never has to reconcile.
+  // Paid time is read from the ON-CHAIN expiry (subscriptionExpiresAt); a running free
+  // month uses the off-chain credit window (Supabase); banked months are a suffix. Snapshot
+  // the clock once (lazy init, render-pure — matches FreeTierBanner), these are day-scale.
+  const [now] = useState(() => Date.now())
+  const subActive = subscriptionExpiresAt != null && subscriptionExpiresAt > now
+  const creditMs =
+    creditActiveUntil != null ? new Date(creditActiveUntil).getTime() : null
+  const creditRunning = !subActive && creditMs != null && creditMs > now
+  const banked = monthsBanked ?? 0
+  const bankedSuffix =
+    banked > 0 ? ` · +${banked} month${banked === 1 ? "" : "s"} banked` : ""
+
+  // Same "Month day, year" format as the payout title (formatLongDate), so every date
+  // reads identically. `banked > 0` alone (nothing running, on-chain expired) is a
+  // lapsed referrer living on banked months — entitled, but with no clock to date, so
+  // we state the count, never a fabricated end date, and never the "Subscribe" CTA.
+  const entitlementLine = subActive
+    ? `Active until ${formatLongDate(subscriptionExpiresAt!)}${bankedSuffix}`
+    : creditRunning
+      ? `Active until ${formatLongDate(creditMs!)} (free month)${bankedSuffix}`
+      : banked > 0
+        ? `${banked} free month${banked === 1 ? "" : "s"} banked`
+        : null
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur-md">
@@ -59,9 +88,9 @@ export function DashboardHeader({
                 Wrong network — switch to {networkName}
               </span>
             ) : null}
-            {activeUntil ? (
+            {entitlementLine ? (
               <span className="mr-4 text-sm text-muted-foreground">
-                Active until: {activeUntil}
+                {entitlementLine}
               </span>
             ) : freeMode ? (
               <button

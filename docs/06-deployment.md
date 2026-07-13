@@ -20,7 +20,7 @@ npm install
 cp .env.local.example .env.local     # then fill in the values (see below)
 npm run dev                          # Next dev server
 npm run typecheck                    # tsc --noEmit
-npm run build                        # production build (7 routes)
+npm run build                        # production build (14 routes)
 npm run lint                         # eslint
 ```
 
@@ -39,7 +39,9 @@ contract. Summary:
 
 - **Public (client):** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
   optional `NEXT_PUBLIC_WC_PROJECT_ID`.
-- **Server-only:** `SUPABASE_SERVICE_ROLE_KEY`, `WALLET_SALT`, `PII_ENCRYPTION_KEY`.
+- **Server-only:** `SUPABASE_SERVICE_ROLE_KEY`, `WALLET_SALT`, `PII_ENCRYPTION_KEY`,
+  `REFERRALS_ENABLED` (referral kill switch, default off), and optional `TRON_PRO_API_KEY`
+  (lifts TronGrid rate limits for the server-side reads).
 - **Local deploy only (NOT the running app):** `PRIVATE_KEY` in a gitignored `.env`, read
   by `scripts/tron/deploy.cjs`.
 
@@ -144,5 +146,6 @@ cd contracts && forge test -vv         # 26 pass
 node scripts/tron/verify-e2e.cjs       # live contract reads as expected
 ```
 
-For copy/architecture consistency during the ongoing Vite→Next migration, both auditors
-(`copy-auditor`, `ux-auditor`) verify parity — see `CLAUDE.md`.
+For copy/architecture consistency, both auditors (`copy-auditor`, `ux-auditor`) verify
+parity — see `CLAUDE.md`. (The Vite→Next migration itself is complete; parity checks now
+apply to ongoing changes.)

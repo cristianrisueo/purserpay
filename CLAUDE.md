@@ -66,11 +66,12 @@ the subscription; it never gains custody of funds, keys, or broadcast.
   (IndexedDB). It is never sent to a server in readable form — the batch the client
   chooses to build is the only thing that ever leaves the browser, and it leaves as a
   transaction they sign themselves.
-- The **account holder's own PII** (name, country, tax ID) plus auth and subscription
-  state persist in **Supabase, encrypted at rest (pgcrypto AES-256)**. Wallet
-  addresses touched for OFAC screening are **salted-SHA-256 hashed** before any
-  persistence. Purser stores nothing it can read, and nothing that ties a person to
-  their payouts.
+- The **account holder's own PII** (name, country, tax ID) persists in **Supabase,
+  encrypted at rest (pgcrypto AES-256)**; the free-tier quota and referral credit persist as
+  **salted-hashed, no-PII rows**; wallet addresses touched for OFAC screening are
+  **salted-SHA-256 hashed** before any persistence. (Subscription state is **on-chain**, read
+  live — NOT stored in Supabase; magic-link auth is the chosen method but not yet wired.)
+  Purser stores nothing it can read, and nothing that ties a person to their payouts.
 
 If a task ever seems to require holding funds/keys, broadcasting on the client's
 behalf, storing the **roster** server-side, or storing **readable** PII — STOP and
@@ -85,9 +86,12 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
 
 ## STACK (closed — execute, don't re-litigate)
 
-> Migration status: the repo is still Vite today. The Next.js + Supabase port is the
-> active infra task. During it, **zero design/copy drift** — the ported app must be
-> 1:1 with the current build (see the Migration Phase below and both auditors).
+> Migration status: the Vite → Next.js + Supabase port is **DONE** — this repo IS Next.js 15
+> (App Router, route handlers, server actions), with Supabase compliance, OFAC screening, the
+> on-chain subscription, the free tier, and the referral loop all shipped. The one-time
+> zero-drift port is complete; improvements now ship normally. One caveat: magic-link auth
+> (`signInWithOtp`) is the chosen method but is **NOT yet wired** — the dashboard is gated by
+> wallet connection + on-chain entitlement, not an auth session. See the Migration Phase below.
 
 - **Frontend:** Next.js (App Router) + React + TypeScript, deployed on Vercel (was a
   Vite SPA). Landing at `/`, app at `/dashboard`. Server components, route handlers,
@@ -116,8 +120,9 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
   - **Roster:** IndexedDB via Dexie.js. Device-local, client-side only. Never leaves
     the browser in readable form. (Unchanged from V1.)
   - **Account + compliance:** Supabase (Postgres) holds the account holder's encrypted
-    PII (pgcrypto AES-256), auth, and subscription state, plus salted-hashed
-    OFAC-screening data. The server never receives the roster.
+    PII (pgcrypto AES-256), the free-tier quota, and referral credit — plus salted-hashed
+    OFAC-screening data. It does **not** hold auth (not yet wired) or subscription state
+    (that's on-chain, read live). The server never receives the roster.
 - **Web3:** tronweb + TronLink / WalletConnect for address validation, batch build,
   and signing. (No Ledger/WebUSB in V1.)
 - **Payout contract:** our own minimal disperse contract on TRON — the `disperse` path is
@@ -126,9 +131,16 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
   (`updateSubscriptionFees`); that lever never touches funds, keys, broadcast, or disperse.
 - **Billing / gate:** an **on-chain subscription smart contract** — 150 USDT/mo or
   1,500 USDT/yr (2 months free), paid on-chain, **owner-adjustable** (not a redeploy, not a
-  proxy). **No Stripe, no card, no fiat.** The
-  gate checks "active on-chain subscription?" via a Vercel route handler; magic-link
-  auth (Supabase Auth `signInWithOtp`) stays. The gate never sees the roster or funds.
+  proxy). **No Stripe, no card, no fiat.** The gate (a Vercel route handler,
+  `/api/payout/authorize`) first **proves wallet control** — a single-use signature challenge
+  (`GET /api/payout/challenge` → `signMessageV2`; the server recovers the signer and asserts it
+  equals the payer **before** any quota/credit is touched, so a spoofed public address can't
+  consume a customer's free slot or burn a credit month) — then authorizes on **entitlement = an
+  active on-chain subscription OR off-chain referral credit**; with neither, a **free tier** (1
+  payee / 30 days) applies. That signature challenge is **wallet-control proof, NOT an auth
+  session** (no session, no identity). Magic-link auth (Supabase `signInWithOtp`) remains the
+  chosen *account*-auth method but is **not yet wired** — the dashboard is gated by wallet
+  connection + on-chain entitlement. The gate never sees the roster or funds.
 - **Deploy:** single repo, Vercel (Next.js runtime + serverless / edge functions).
 
 ### Design tokens (match the landing exactly)
@@ -212,22 +224,24 @@ Ship each phase visible before starting the next. One step, see it, next.
 
 ---
 
-## MIGRATION PHASE — Vite → Next.js + Supabase + compliance (current)
+## MIGRATION PHASE — Vite → Next.js + Supabase + compliance (SHIPPED)
 
-The active infra work. Order matters; each step ships visible and verified before the
-next.
+Kept as the record of what was built and in what order. Status: steps 1, 3, 4 **shipped**;
+step 2 shipped **except magic-link auth, which is not yet wired** (deferred); step 5 (the copy
+pass) is the only open item, now **unblocked** (the port is verified 1:1).
 
-1. **Port the frontend 1:1.** Move the Vite SPA to Next.js (App Router) with **zero
-   design or copy drift** — the ported app must render and read identically to the
-   current build. This is a plumbing move, not a redesign. (Both auditors verify parity.)
-2. **Stand up Supabase.** Account-holder PII encrypted at rest (pgcrypto AES-256), auth
-   (magic-link, `signInWithOtp`), subscription state. The roster stays in Dexie.
-3. **OFAC middleware.** Server-side recipient screening before a batch can be built;
+1. **Port the frontend 1:1.** ✅ SHIPPED. Vite SPA → Next.js (App Router) with zero design/copy
+   drift — the ported app renders and reads identically. A plumbing move, not a redesign.
+2. **Stand up Supabase.** ✅ mostly SHIPPED — PII encrypted at rest (pgcrypto AES-256) +
+   compliance/free-tier/referral tables. ⚠️ **auth (magic-link, `signInWithOtp`) is NOT yet
+   wired**; the current gate is wallet connection + on-chain entitlement. Subscription state is
+   **on-chain** (not a Supabase table). The roster stays in Dexie.
+3. **OFAC middleware.** ✅ SHIPPED. Server-side recipient screening before a batch can be built;
    salted-hashed persistence only; a hit blocks the batch.
-4. **On-chain subscription.** Swap the billing gate to the subscription smart contract
-   (150 USDT/mo or 1,500 USDT/yr). Retire Stripe entirely.
-5. **Post-migration copy reconciliation.** Only after the port is verified 1:1, open a
-   dedicated copy pass to update the frozen landing lines (see Pending Reconciliation).
+4. **On-chain subscription.** ✅ SHIPPED. The billing gate is the subscription smart contract
+   (150 USDT/mo or 1,500 USDT/yr). Stripe never existed here; nothing to retire.
+5. **Post-migration copy reconciliation.** ⏳ OPEN (now unblocked). Open a dedicated copy pass to
+   update the frozen non-landing lines (see Pending Reconciliation — the landing is already done).
 
 ---
 
@@ -237,8 +251,27 @@ next.
   build for or promise Base/Arbitrum/etc.
 - Wallets in V1: **TronLink + WalletConnect**. (No Ledger yet.)
 - Pricing: **150 USDT/month or 1,500 USDT/year** (2 months free), paid **on-chain via
-  smart contract** — no fiat, no card, no Stripe. The two fee amounts are **owner-adjustable
-  on-chain** (`updateSubscriptionFees`) — no redeploy, no proxy; custody is never affected.
+  smart contract** — no fiat, no card, no Stripe. Both plans are live. The two fee amounts are
+  **owner-adjustable on-chain** (`updateSubscriptionFees`) — no redeploy, no proxy; custody is
+  never affected.
+- Free tier: **1 payee per payer wallet, once every 30 days, forever** — a mainnet smoke test,
+  enforced **off-chain** in the authorize route (never in `disperse`). Everything beyond it
+  needs a subscription (or referral credit). There is **no testnet sandbox** — discarded, see
+  docs/07 §1.
+- Wallet-control proof: the payout gate authorizes **only after the caller proves it controls
+  the payer wallet** — a **single-use signature challenge** (`GET /api/payout/challenge` →
+  `signMessageV2`, recovered server-side) checked **before** OFAC / subscription / quota /
+  credit. It stores only a salted nonce hash (no PII, 5-min TTL). This is **wallet-control
+  proof, not an auth session** — magic-link account auth stays unwired. See docs/07 §4a.
+- Referrals: **asymmetric, off-chain credit.** A paying customer's referral link banks them
+  **one free month** when someone they invited **pays their first month on-chain**; the invitee
+  gets **no discount** (full price). The reward is fixed at **one month per qualified referral**
+  because reward (150 USDT of value) must never exceed the referee's cost (150 USDT on-chain) —
+  that **1:1 ratio** is the whole anti-fraud (self-referral is zero-margin). Credit is off-chain
+  (Supabase), **additive**, lazily consumed at pay time (no indexer); it can only **grant** access,
+  never deny it, and a credit-activated month never earns another reward. Behind
+  `REFERRALS_ENABLED` (default off). The **contract is untouched** — the chain stays the source of
+  truth for payments. See `docs/08-referrals-and-credit.md`.
 - Storage: the **roster stays device-local** (IndexedDB); **account-holder PII is
   stored server-side encrypted** (pgcrypto AES-256 — dissociation); recipient addresses
   are salted-hashed for OFAC. Purser stores nothing it can read.
@@ -254,15 +287,20 @@ next.
 
 ## NOT IN V1 (YAGNI — do not build)
 
-Multichain · Ledger/WebUSB signing · social login or username+password (magic link
-only) · partial "pay until balance runs out" (atomic disperse makes it moot) ·
-multi-wallet source · roles / multi-user within an agency · cross-device **roster**
-sync (the roster is per-device by design — a privacy feature, not a bug; account and
-subscription state do live server-side, but the roster never does) · analytics
-dashboards · any server-side storage of the **roster** (encrypted account PII lives
-server-side; the roster does not).
+Multichain · Ledger/WebUSB signing · social login or username+password (magic-link is the
+chosen method — and it isn't wired yet) · partial "pay until balance runs out" (atomic
+disperse makes it moot) · multi-wallet source · roles / multi-user within an agency ·
+cross-device **roster** sync (the roster is per-device by design — a privacy feature, not a
+bug; encrypted account PII plus the free-tier/referral rows live server-side, but the roster
+never does — and subscription state is on-chain, not server-side) · analytics dashboards ·
+any server-side storage of the **roster** (encrypted account PII lives server-side; the roster
+does not) · **a testnet sandbox / demo / trial environment** (discarded, not deferred — the
+mainnet free tier does its job better; see docs/07 §1 and the "Discarded" list in
+docs/README.md).
 
-If you think you need one of these, you don't — flag it to the owner first.
+The **free tier** (1 payee / 30 days) and **off-chain referral credit** ARE shipped — they are
+*not* on this list; see STANDING FACTS. If you think you need one of the above, you don't —
+flag it to the owner first.
 
 ---
 
@@ -308,6 +346,16 @@ lines still reflect the old model and must be reconciled in a dedicated copy pas
 - `src/components/landing/PricingSection.tsx` — now **150 / 1,500 USDT, on-chain** (no
   fiat, no card), replacing €249 / €2,490.
 
-**Still pending (non-landing — the freeze stands until their own pass):** the
-device-local assertions in `EmptyRoster.tsx`, `lib/db.ts`, `lib/receipts.ts`,
-`lib/tron/validation.ts`. Auditors flag these as pending; they do not edit them.
+**Still pending (non-landing).** The port is verified 1:1, so this copy pass is now
+**unblocked** — but it is deliberately deferred to its own dedicated pass (this doc-audit
+sprint flags, it does not rewrite app copy). Re-audited state of the four originally-listed files:
+
+- `src/components/dashboard/EmptyRoster.tsx` — **genuine item.** The user-facing line "Nothing
+  leaves your browser." is stale-absolute: the roster stays, but the signed tx, the encrypted
+  PII, and the OFAC screen all leave. Reconcile in the copy pass.
+- `src/lib/tron/validation.ts` — **comment-level.** A code comment still cites the old "data
+  never leaves the device" framing (CLAUDE.md now scopes that to the *roster*); the ✓✓ privacy
+  invariant it documents is accurate.
+- `src/lib/db.ts`, `src/lib/receipts.ts` — **no longer pending.** Re-audited: their device-local
+  comments are roster-scoped and accurate (the roster genuinely is IndexedDB-only, never a
+  server call), so there is nothing stale to reconcile.

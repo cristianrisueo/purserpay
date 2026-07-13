@@ -17,6 +17,18 @@ mainnet, with THEIR wallet and THEIR real recipient, that the money actually mov
 one thing a testnet can't prove). It is deliberately just enough to build trust and no
 more.
 
+### Why there is no testnet sandbox (DISCARDED — do not reopen)
+
+**Owner decision: a testnet sandbox / demo environment is discarded, not deferred — it will
+never be built.** The mainnet free tier above does the sandbox's job strictly better: it
+proves the product with the user's **real** wallet and **real** money, which a testnet
+cannot. It also has **less** friction — a sandbox would require the user to add Nile to
+TronLink and find a faucet, more steps than connecting the wallet they already use. And it
+would add a permanent second network configuration — a standing bug surface across expiry
+dates, contracts, balances, and receipts — in exchange for an inferior demo. Discarded. (See
+the "Discarded — do not reopen" list in [`README.md`](./README.md). This is separate from
+Nile being the *current dev/deploy network* in `config.ts`, which stays.)
+
 ## 2. The load-bearing structural fact
 
 `disperse()` is **permissionless and immutable** (`contracts/src/PurserPay.sol` — no owner
@@ -59,14 +71,72 @@ free_tier_usage
   `billing_profiles`; `free_tier_usage` is governed by the TTL, not erasure. See
   [`04-compliance-and-encryption.md`](./04-compliance-and-encryption.md) §6.
 
-## 5. The request path (two route handlers)
+## 4a. Proving wallet control (Gate 0 — runs before everything)
+
+The authorize route acts on a **client-supplied** `payerAddress`, and wallet addresses are
+**public on-chain**. Without proof of control, anyone could POST a paying customer's address
+and consume that customer's free-tier slot — or burn a banked referral credit month (150 USDT
+of value). So before OFAC, the subscription read, or **any** quota/credit consume, the caller
+must prove it controls the payer wallet with a **single-use signature challenge**.
+
+This is **not an auth system** (no magic link, no session, no cookie — those stay unbuilt). It
+is a wallet-signature challenge, the most native crypto flow:
+
+1. **Issue** — `GET /api/payout/challenge?address={addr}` (`src/app/api/payout/challenge/
+   route.ts` → `issueChallenge`): mint a CSPRNG nonce (`node:crypto`), store `{nonce,
+   wallet_hash, expires_at}` (5-minute TTL, `used_at` null) in `payout_challenges`, and return
+   the exact message to sign (`cache-control: no-store`). The message is TIP-191 / human-readable:
+   ```
+   PurserPay — authorize payout
+   Address: {addr}
+   Nonce: {nonce}
+   Expires: {iso8601}
+   ```
+2. **Sign** — the client signs that message with its connected wallet (`signMessageV2`; one
+   prompt, no funds move — `src/lib/tron/wallet.ts` → `signMessage`, via
+   `src/lib/payout/challengeClient.ts` → `proveWalletControl`).
+3. **Verify (in authorize, FIRST)** — the route (`verifyChallenge` → the pure
+   `src/lib/payout/challengeVerify.ts` → `verifyWalletControl`):
+   - **Atomically consumes** the nonce — `consume_payout_challenge(nonce, hash(payer))`, a
+     single guarded `UPDATE … WHERE used_at IS NULL AND expires_at > now() RETURNING expires_at`
+     (Postgres row-locks → **N concurrent → exactly one wins**; the whole replay + TOCTOU
+     defense, mirroring `consume_free_tier`). No row → **403** (unknown / used / expired /
+     wrong-address).
+   - **Reconstructs** the exact signed message from the payer, the nonce, and the stored expiry,
+     **recovers the signer offline** (`serverRead.ts` → `recoverMessageSigner`, TronWeb
+     `verifyMessageV2` — keyless ec-recover, no network), and asserts it equals the payer.
+     Mismatch → **403**.
+
+**Acceptance:** an attacker can obtain a nonce for a victim's address (it's public) but cannot
+sign the message → the consume burns only a nonce the attacker requested, the signer mismatch
+returns **403, and nothing downstream is touched.** The victim's slot/credit is never consumed.
+A signature failure returns before `authorizePayout`, so it can **never** burn a slot or a
+credit month.
+
+**Storage/dissociation:** `payout_challenges` (`supabase/migrations/0004_payout_challenges.sql`)
+holds only the salted `WALLET_SALT` hash (same pepper as OFAC/free-tier/referral) + an ephemeral
+nonce + a short expiry — **no PII, no raw address**. RLS on / no policies; `security invoker`
+RPCs; service-role only; a 1-day TTL purge. **No new env var** — reuses `WALLET_SALT`, the
+service-role client, and the keyless server TRON client. See
+[`04`](./04-compliance-and-encryption.md) §6d.
+
+**Known/accepted:** the challenge endpoint is a side-effecting `GET` (each call mints a fresh
+nonce) — intentional and safe with `cache-control: no-store`. An attacker can burn nonces they
+themselves requested (meaningless; nonces are ephemeral and cheap). Only the **payout authorize**
+path is challenge-gated; `/api/referral/claim` still relies on the on-chain subscribe-tx proof
+(its `owner_address` must equal the referee) — see [`08`](./08-referrals-and-credit.md) §7.
+
+## 5. The request path (three route handlers)
 
 `src/lib/freeTier/gate.ts` holds the pure, dependency-injected DECISION
-(`authorizePayout`); the routes wire the real dependencies.
+(`authorizePayout`); the routes wire the real dependencies. `GET /api/payout/challenge` mints
+the wallet-control challenge (§4a).
 
-### `POST /api/payout/authorize` → `{ payerAddress, recipientCount, recipientAddresses[] }`
+### `POST /api/payout/authorize` → `{ payerAddress, recipientCount, recipientAddresses[], nonce, signature }`
 
-Order (in `authorizePayout`):
+`nonce` + `signature` prove wallet control (§4a) and are checked **first**: a missing pair →
+**403 `WALLET_PROOF_REQUIRED`**; a failed recovery/consume → **403 `WALLET_PROOF_FAILED`**,
+nothing consumed. Only a proven caller reaches `authorizePayout`, whose order is:
 
 1. **OFAC** — screen ALL `recipientAddresses` (`src/lib/compliance/ofac.ts` →
    `screenRecipients`, the SAME core the roster-wide screen uses). A hit → **403**
@@ -165,10 +235,11 @@ unsubscribed wallet straight into free mode. Every claim in that copy maps to a 
 | ------------------------------ | -------------------------------------------------------------------------------------- |
 | Pure decision + refund logic   | `src/lib/freeTier/gate.ts`, `src/lib/freeTier/refund.ts`                               |
 | Quota adapter (RPCs)           | `src/lib/freeTier/quota.ts`                                                            |
+| Wallet-control proof (Gate 0)  | `src/lib/payout/challenge{,Message,Verify,Client}.ts` (pure decision + server + client) |
 | OFAC screen core (shared)      | `src/lib/compliance/ofac.ts`                                                           |
-| Server TRON reads (sub + txid) | `src/lib/tron/serverRead.ts`                                                           |
-| Routes                         | `src/app/api/payout/{authorize,release}/route.ts`                                      |
-| Client wiring                  | `src/hooks/usePayout.ts`, `src/lib/freeTier/authorizeClient.ts`                        |
+| Server TRON reads (sub + txid + signer recover) | `src/lib/tron/serverRead.ts`                                          |
+| Routes                         | `src/app/api/payout/{challenge,authorize,release}/route.ts`                            |
+| Client wiring                  | `src/hooks/usePayout.ts`, `src/lib/freeTier/authorizeClient.ts`, `src/lib/tron/wallet.ts` (`signMessage`) |
 | Free-mode UI                   | `src/components/dashboard/FreeTierBanner.tsx` + PayoutControls/columns/DashboardHeader |
-| Schema                         | `supabase/migrations/0002_free_tier_usage.sql`                                         |
-| Tests                          | `tests/freeTier/gate.test.ts`, `tests/freeTier/toctou.integration.test.ts`             |
+| Schema                         | `supabase/migrations/0002_free_tier_usage.sql`, `0004_payout_challenges.sql`           |
+| Tests                          | `tests/freeTier/{gate,toctou.integration}.test.ts`, `tests/challenge/{message,verify,challenge.integration}.test.ts` |

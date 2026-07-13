@@ -134,6 +134,8 @@ Components:
 | `WALLET_SALT` | **server-only** | `crypto.ts` via server actions | global hashing pepper; rotating re-keys all hashes |
 | `PII_ENCRYPTION_KEY` | **server-only** | `encrypt_and_store_pii` RPC | AES key; rotating makes existing ciphertext undecryptable |
 | `NEXT_PUBLIC_WC_PROJECT_ID` | public (optional) | `wallet.ts` | enables the WalletConnect option (stub today) |
+| `REFERRALS_ENABLED` | **server-only** | `src/lib/referral/config.ts` | referral kill switch; **default off** — gates reward grants + the dashboard card (attribution + honoring existing credit always run) |
+| `TRON_PRO_API_KEY` | **server-only** (optional) | `src/lib/tron/serverRead.ts` | lifts TronGrid rate limits for the gate's server-side reads; unnecessary on Nile |
 | `PRIVATE_KEY` | **local/deploy only** | `scripts/tron/deploy.cjs` | gitignored `.env`; NOT used by the running app |
 
 Rules (also in `.env.local.example`):
@@ -177,6 +179,35 @@ trim-only normalization as OFAC (`src/lib/crypto.ts` → `hashWalletAddress`, vi
 DB. Access is service-role-only through `security invoker` RPCs (`consume_free_tier`,
 `release_free_tier`, `purge_free_tier_usage`); RLS is on with no policies. See
 [`07`](./07-freemium-gate.md) §4.
+
+## 6c. Referral tables (same dissociation posture, no PII)
+
+The referral schema (`supabase/migrations/0003_referrals.sql` — `referral_accounts`,
+`referral_rewards`) keys every wallet by the **same** salted `WALLET_SALT` hash as OFAC and
+the free tier (`src/lib/referral/accounts.ts` → `referralWalletHash` → `hashWalletAddress`).
+No raw address, **no PII**, and **no FK to `billing_profiles`** — the shared pseudonymous
+hash reveals no identity, matching `free_tier_usage`. The `referral_code` is opaque and
+**random**, never derived from the wallet (`src/lib/referral/code.ts`), so the public share
+link can't be reversed to a treasury address. RLS is on with no policies; access is
+service-role-only via `security invoker` RPCs. Like `free_tier_usage`, these tables hold no
+PII and are **out of scope for Art. 17 erasure**; unlike it they have **no TTL** (a referral
+account is the customer's durable referral identity). See
+[`08`](./08-referrals-and-credit.md).
+
+## 6d. Wallet-control challenge table (same dissociation posture, no PII)
+
+The wallet-control challenge (`supabase/migrations/0004_payout_challenges.sql` —
+`payout_challenges`) keys every wallet by the **same** salted `WALLET_SALT` hash as OFAC, the
+free tier, and referrals (`src/lib/payout/challenge.ts` → `challengeWalletHash` →
+`hashWalletAddress`). Each row is a salted `wallet_hash` + an **ephemeral CSPRNG nonce** + a
+5-minute expiry — **no raw address, no PII**, and no link to the account holder. RLS is on with
+no policies; access is service-role-only via `security invoker` RPCs (`issue_payout_challenge`,
+`consume_payout_challenge`, `purge_payout_challenges`). Like `free_tier_usage` it holds no PII
+and is **out of scope for Art. 17 erasure**; a **1-day TTL purge** is its whole retention story
+(challenges live only for the one round trip between connect and authorize). The atomic
+single-use `consume_payout_challenge` is the replay + TOCTOU defense. See
+[`07`](./07-freemium-gate.md) §4a. **No new env var** — it reuses `WALLET_SALT` and the
+service-role client.
 
 ## 7. Loading the OFAC list (operational note)
 

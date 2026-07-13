@@ -30,6 +30,17 @@ export type AuthzDeps = {
   /** Server-side subscription read. true = active, false = none, null =
    *  UNVERIFIABLE (contract undeployed / RPC failure). */
   isSubscribed(payerAddress: string): Promise<boolean | null>
+  /** OPTIONAL referral-credit check — a subscription-equivalent when it returns
+   *  entitled (an off-chain banked month, lazily consumed here). Absent => no
+   *  credit (the free-tier-only path the gate.test.ts fakes exercise, so their
+   *  behavior is unchanged). `allowActivation` is false when the chain read was
+   *  UNVERIFIABLE (null), so a banked month is only ever consumed when the chain
+   *  is DEFINITIVELY inactive. Throws => the route fails closed. See
+   *  docs/08-referrals-and-credit.md. */
+  checkCredit?(
+    payerAddress: string,
+    opts: { allowActivation: boolean }
+  ): Promise<{ entitled: boolean }>
   /** Atomic quota consume for the payer. { consumed, at } — on block `at` is the
    *  existing last_free_payout_at so we can compute the cooldown. */
   consumeQuota(payerAddress: string): Promise<{ consumed: boolean; at: string | null }>
@@ -70,14 +81,29 @@ export async function authorizePayout(
     return { ok: false, code: "OFAC_BLOCKED", flagged }
   }
 
-  // 2) Subscription — active bypasses the quota entirely.
+  // 2) Entitlement — an active on-chain subscription OR referral credit bypasses
+  //    the quota entirely (both behave identically → mode "subscription").
   const subscribed = await deps.isSubscribed(input.payerAddress)
-  if (subscribed === null) {
-    // Unverifiable => fail closed. Never consume a real subscriber's free slot.
-    return { ok: false, code: "SUBSCRIPTION_UNVERIFIABLE" }
-  }
   if (subscribed === true) {
+    // On-chain active → entitled. Credit is left BANKED (never touched here).
     return { ok: true, mode: "subscription" }
+  }
+  // Referral credit — a subscription-equivalent, lazily consumed. allowActivation
+  // is only true when the chain is DEFINITIVELY inactive (false); on an
+  // unverifiable null we only honor an already-running credit month, never burn a
+  // banked one on a wallet that might actually be subscribed on-chain.
+  if (deps.checkCredit) {
+    const credit = await deps.checkCredit(input.payerAddress, {
+      allowActivation: subscribed === false,
+    })
+    if (credit.entitled) {
+      return { ok: true, mode: "subscription" }
+    }
+  }
+  if (subscribed === null) {
+    // Unverifiable AND no credit => fail closed. Never consume a real
+    // subscriber's free slot; an already-running credit month rescued it above.
+    return { ok: false, code: "SUBSCRIPTION_UNVERIFIABLE" }
   }
 
   // 3) Free tier — one payee, once every 30 days.

@@ -11,6 +11,7 @@ import { FreeTierBanner } from "@/components/dashboard/FreeTierBanner"
 import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
+import { ReferralCard } from "@/components/dashboard/ReferralCard"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { usePayout } from "@/hooks/usePayout"
 import { payoutTitle } from "@/lib/format"
@@ -46,6 +47,8 @@ export function Dashboard() {
         account={payout.account}
         balance={payout.balance}
         subscriptionExpiresAt={payout.subscriptionExpiresAt}
+        creditActiveUntil={payout.referralCreditActiveUntil}
+        monthsBanked={payout.referralMonthsBanked}
         freeMode={payout.freeMode}
         walletError={payout.walletError}
         onConnect={payout.connect}
@@ -82,6 +85,19 @@ export function Dashboard() {
                 <FreeTierBanner
                   cooldownUntil={payout.cooldownUntil}
                   onSubscribe={payout.openPaywall}
+                />
+              </div>
+            ) : null}
+
+            {/* Referral card — entitled wallets only (subscriber or on credit), and
+                only when the reward mechanic is enabled. A free-tier wallet sees the
+                FreeTierBanner's subscribe CTA instead, never this. */}
+            {payout.entitled && payout.referralEnabled && payout.referralCode ? (
+              <div className="mb-5">
+                <ReferralCard
+                  code={payout.referralCode}
+                  monthsBanked={payout.referralMonthsBanked}
+                  qualifiedReferrals={payout.referralQualified}
                 />
               </div>
             ) : null}

@@ -45,6 +45,7 @@ subscription, and store the account holder's own PII encrypted — **never** the
 | 05 | [Smart contract](./05-smart-contract.md) | `PurserPay.sol` function-by-function, invariants, owner governance, events/errors, the test suite |
 | 06 | [Deployment & ops](./06-deployment.md) | the deploy flow, current addresses, and the **mainnet migration checklist** |
 | 07 | [Free-tier gate](./07-freemium-gate.md) | the 1-payee/30-day free tier: the payer-wallet anchor, the atomic-consume/TOCTOU design, the refund path, the TTL, and the accepted bypass |
+| 08 | [Referrals & credit](./08-referrals-and-credit.md) | the asymmetric referral loop: off-chain credit entitlement (no indexer), the **1:1 anti-fraud ratio**, the monotonic-grant + Active-Lock invariants, and "credit never earns rewards" |
 
 Governance/spec and product philosophy (the 3 Laws of UX, the public-brand rules, "not in
 V1") live in the repo-root [`CLAUDE.md`](../CLAUDE.md). The Vite-era build log is
@@ -85,5 +86,32 @@ Break any of these and the change is wrong by definition. Sources in the linked 
   slot is consumed **atomically, optimistically, before broadcast** (one `INSERT … ON
   CONFLICT … WHERE`); a verified-failed payout is refunded. Recipients are **never** stored
   for quota (GDPR). The direct-`disperse` bypass is accepted. → [`07`](./07-freemium-gate.md)
+- **The payout gate proves WALLET CONTROL before any quota/credit is touched.** `POST
+  /api/payout/authorize` requires a single-use signature challenge (`GET /api/payout/challenge`
+  → `signMessageV2`); the server recovers the signer offline and asserts it equals the payer
+  **first**, so a spoofed public address can never consume a customer's free slot or burn a
+  credit month. This is **not** auth (no session, no identity) — magic-link auth stays unbuilt.
+  → [`07`](./07-freemium-gate.md) §4a
 - **TRON only, USDT (TRC20) only.** No multichain. Contract bytecode must target
   `istanbul` (no PUSH0). → [`05`](./05-smart-contract.md), [`06`](./06-deployment.md)
+- **Referral credit is off-chain, monotonic, and 1:1.** Entitlement =
+  `onChainActive || creditActiveUntil > now`, credit lazily consumed (no indexer). The
+  reward (1 month = 150 USDT) never exceeds the referee's cost (150 USDT on-chain), so
+  self-referral is zero-margin — **never make the reward bigger than the price**. Credit
+  can only GRANT access, never DENY it; a month activated from credit never earns a reward
+  (a reward needs a verified on-chain `subscribe` tx). The contract is untouched — the
+  chain stays the source of truth for payments. → [`08`](./08-referrals-and-credit.md)
+
+## Discarded — do not reopen
+
+Decisions the owner has closed permanently. A doc that promises one of these is a bug —
+delete the promise, don't build the feature.
+
+- **Testnet sandbox / demo / trial environment.** Discarded, not deferred. The mainnet free
+  tier (1 payee / 30 days — [`07`](./07-freemium-gate.md)) does its job strictly better:
+  it proves the product with the user's REAL wallet and REAL money (a testnet can't), with
+  LESS friction (no "add Nile + find a faucet" step), and without a permanent second network
+  configuration (a standing bug surface across expiry dates, contracts, balances, receipts).
+  This is **not** the same as Nile being the *current dev/deploy network* in
+  `src/lib/tron/config.ts` — that is a deploy-target fact and it stays; only "sandbox as a
+  future product feature" is dead. See [`07`](./07-freemium-gate.md) §1.

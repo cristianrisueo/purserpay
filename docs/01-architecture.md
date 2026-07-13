@@ -107,9 +107,15 @@ src/
 │   ├── legal/page.tsx           # legal copy
 │   ├── privacy/page.tsx         # privacy copy
 │   ├── actions/compliance.ts    # "use server" — OFAC + PII (service-role Supabase)
-│   └── api/payout/              # ROUTE HANDLERS — the payout authorization gate
-│       ├── authorize/route.ts   #   OFAC + server-side subscription + free-tier consume
-│       └── release/route.ts     #   free-tier refund (on-chain re-verify, fail-closed)
+│   ├── r/[code]/route.ts        # referral attribution — set pp_ref cookie, 302 to /
+│   └── api/
+│       ├── payout/              # ROUTE HANDLERS — the payout authorization gate
+│       │   ├── challenge/route.ts #   Gate 0: mint a single-use wallet-control challenge
+│       │   ├── authorize/route.ts #   proof + OFAC + subscription + referral credit + free-tier
+│       │   └── release/route.ts    #   free-tier refund (on-chain re-verify, fail-closed)
+│       └── referral/           # ROUTE HANDLERS — the referral loop
+│           ├── claim/route.ts   #   verify subscribe tx + grant referrer a credit month
+│           └── summary/route.ts #   card data + freeMode credit parity (lazy code gen)
 ├── views/
 │   ├── Landing.tsx              # single-page IA: #why → #how → #pricing → FAQ
 │   └── Dashboard.tsx            # route guard + wires usePayout to the components
@@ -121,7 +127,9 @@ src/
 │   └── ui/                      # shadcn primitives (owned, in-repo)
 ├── lib/
 │   ├── compliance/ofac.ts       # screenRecipients — shared OFAC core (action + route)
+│   ├── payout/                  # wallet-control challenge (Gate 0): challengeMessage/Verify (pure) · challenge (server) · challengeClient
 │   ├── freeTier/                # gate.ts (pure decision) · quota.ts · refund.ts · authorizeClient.ts
+│   ├── referral/                # code.ts (opaque CSPRNG) · accounts.ts (server) · config.ts (kill switch) · claimClient.ts
 │   ├── db.ts                    # Dexie schema (payees, payments, meta)
 │   ├── roster.ts                # roster CRUD + atomic CSV replace
 │   ├── receipts.ts              # receipt persistence + green-cycle logic
@@ -137,7 +145,7 @@ src/
 │       ├── validation.ts        # the ✓/✓✓ double-check + privacy invariant
 │       ├── disperse.ts          # approve → disperse money path (atomic batches)
 │       ├── subscription.ts      # on-chain subscription gate (fail-closed)
-│       ├── serverRead.ts        # SERVER-only keyless reads (sub + txid) for the gate
+│       ├── serverRead.ts        # SERVER-only keyless reads (sub + txid + signer recover) for the gate
 │       │                        #   route handlers — never signs, non-custodial
 │       ├── abi.ts               # minimal ABIs + custom-error selector table
 │       ├── amount.ts            # human ↔ base-unit conversion (exact)
@@ -145,7 +153,7 @@ src/
 ├── styles/globals.css           # Tailwind v4 CSS-first entry + fonts
 contracts/                       # Foundry project (PurserPay.sol + tests)
 scripts/tron/                    # deploy / verify / measure (Node .cjs)
-supabase/migrations/             # compliance schema
+supabase/migrations/             # 0001 compliance · 0002 free tier · 0003 referrals · 0004 payout challenges
 ```
 
 Full module responsibilities live in the per-topic docs; this table is the "where do I
@@ -155,6 +163,7 @@ look" index:
 | --- | --- | --- |
 | The money path (signing, batches) | `src/lib/tron/disperse.ts` | [`02`](./02-non-custodial.md), [`03`](./03-data-flow.md) |
 | The subscription paywall | `src/lib/tron/subscription.ts` | [`03`](./03-data-flow.md) |
+| The referral loop + credit | `src/lib/referral/accounts.ts`, `supabase/migrations/0003_referrals.sql` | [`08`](./08-referrals-and-credit.md) |
 | OFAC + PII encryption | `src/app/actions/compliance.ts`, `src/lib/crypto.ts` | [`04`](./04-compliance-and-encryption.md) |
 | The dashboard state machine | `src/hooks/usePayout.ts` | [`03`](./03-data-flow.md) |
 | The contract | `contracts/src/PurserPay.sol` | [`05`](./05-smart-contract.md) |
@@ -184,7 +193,15 @@ dependencies** (inline `ITRC20`, inline ownership) — see [`05`](./05-smart-con
 
 ## 7. Not in V1 (do not build without flagging)
 
-Multichain · Ledger/WebUSB signing · social/password login (magic-link only) · partial
-"pay until balance runs out" · multi-wallet source · roles within an agency ·
-cross-device **roster** sync · analytics dashboards · **any** server-side storage of the
-roster. If a task seems to need one, stop and flag the owner (see `CLAUDE.md`).
+Multichain · Ledger/WebUSB signing · social/password login (magic-link is the chosen method,
+not yet wired) · partial "pay until balance runs out" · multi-wallet source · roles within an
+agency · cross-device **roster** sync · analytics dashboards · **any** server-side storage of
+the roster · **a testnet sandbox / demo environment** (discarded — see
+[`07`](./07-freemium-gate.md) §1 and the "Discarded" list in [`README.md`](./README.md)). The
+free tier and off-chain referral credit ARE shipped (not excluded). If a task seems to need
+one of the above, stop and flag the owner (see `CLAUDE.md`).
+
+> The payout gate proves **wallet control** with a single-use signature challenge
+> ([`07`](./07-freemium-gate.md) §4a) — this is **not** the magic-link auth above. It adds no
+> session and no identity; it only proves the caller controls the payer wallet before any
+> quota/credit is touched.

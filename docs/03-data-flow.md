@@ -14,7 +14,7 @@
 | Tier | What | Where | Leaves the browser? |
 | --- | --- | --- | --- |
 | **Roster** | payee names, roles, addresses, amounts; payout receipts | **IndexedDB (Dexie)** — `src/lib/db.ts` | **Never** in readable form. The only thing that leaves is the transaction the user signs. |
-| **Account + compliance** | account holder's PII (name, country, tax id); subscription state; OFAC screening data; **free-tier usage** (payer-wallet hash + last-used timestamp) | **Supabase** — `0001_compliance_schema.sql`, `0002_free_tier_usage.sql` | Yes, but **encrypted** (PII, pgcrypto AES-256) or **salted-hashed** (wallets — OFAC + free-tier). Never readable. |
+| **Account + compliance** | account holder's PII (name, country, tax id); OFAC screening data; **free-tier usage** (payer-wallet hash + last-used timestamp); **wallet-control challenges** (ephemeral nonce + payer-wallet hash) | **Supabase** — `0001_compliance_schema.sql`, `0002_free_tier_usage.sql`, `0004_payout_challenges.sql` | Yes, but **encrypted** (PII, pgcrypto AES-256) or **salted-hashed** (wallets — OFAC + free-tier + challenge). Never readable. (Subscription state is **on-chain**, read live — not stored here.) |
 
 The dividing line is absolute: **the server never receives the roster.** See
 [`04-compliance-and-encryption.md`](./04-compliance-and-encryption.md) for the encrypted
@@ -61,14 +61,12 @@ the single most important control-flow in the app.
 
 ```mermaid
 flowchart TD
-    Start([User clicks Pay all / Pay row]) --> G1{Gate 1:<br/>subscriptionActive === true?}
-    G1 -->|"anything but true<br/>(unknown / inactive / unreadable)"| Paywall[Open SubscribeDialog<br/>nothing signed] 
-    G1 -->|true| G2Start[setScreening true]
-
-    G2Start --> G2["Gate 2: verifyRosterCompliance(addresses)<br/>server action — OFAC"]
-    G2 -->|throws / cannot verify| FailClosed[payError set —<br/>NOTHING sent<br/>fail CLOSED]
-    G2 -->|"flagged.length > 0"| Block[OfacBlockedDialog<br/>whole batch blocked]
-    G2 -->|clean| G3
+    Start([User clicks Pay all / Pay row]) --> Prove["Gate 0: prove wallet control<br/>GET /api/payout/challenge → sign (signMessageV2)"]
+    Prove -->|"rejected / challenge failure"| FailClosed[calm message —<br/>NOTHING signed, fail CLOSED]
+    Prove -->|"signed {nonce, signature}"| Authz["Gates 0-3, fused server-side:<br/>POST /api/payout/authorize<br/>proof → OFAC → subscription → referral credit → free-tier quota"]
+    Authz -->|"403 WALLET_PROOF_* / OFAC_BLOCKED"| Block[OfacBlockedDialog<br/>or calm block —<br/>whole batch blocked]
+    Authz -->|"402 FREE_TIER_* / 503 unverifiable / error"| FailClosed
+    Authz -->|"200 (subscription / credit / free)"| G3
 
     G3["Gate 3: runDisperse(operator, rows)"] --> Approve{allowance < total?}
     Approve -->|yes| DoApprove[approve once — user signs]
@@ -81,17 +79,30 @@ flowchart TD
 
 Gate specifics (all in `usePayout.ts` → `runPayment`, plus `canPayAll`):
 
+- **Gate 0 — prove wallet control (runs FIRST).** Before any server state is touched,
+  `runPayment` calls `proveWalletControl` (`src/lib/payout/challengeClient.ts`): fetch a
+  single-use challenge (`GET /api/payout/challenge`) and sign it with the connected wallet
+  (`signMessageV2`, one prompt). The `{nonce, signature}` ride along in the authorize body; the
+  server recovers the signer and asserts it equals `payerAddress` **before** OFAC / subscription
+  / quota / credit — so a spoofed payer can never consume a real customer's free slot or credit
+  month. A rejection or challenge failure fails **closed** (nothing signed). See
+  [`07-freemium-gate.md`](./07-freemium-gate.md) §4a.
 - **Gates 1–2 now run SERVER-SIDE in one round trip** — `POST /api/payout/authorize`
   (`src/app/api/payout/authorize/route.ts`) fuses OFAC + a server-side subscription read +
   the free-tier quota. The client never decides authorization; a `402/403/503`/network
   error all **fail closed** (nothing signed). See [`07-freemium-gate.md`](./07-freemium-gate.md).
   - **OFAC** — screen ALL recipients (`screenRecipients`, shared with the roster-wide
     "value demo" screen). A hit blocks the **whole** batch (`403 OFAC_BLOCKED`).
-  - **Subscription** — `isSubscriptionActive(payer)` read server-side via TronGrid
-    (`src/lib/tron/serverRead.ts`). Active → unlimited. Unverifiable → `503`, fail closed.
-  - **Free tier** — `count > 1` → `402 FREE_TIER_BATCH_LIMIT`; `count === 1` → an ATOMIC
-    quota consume (`200` authorized, or `402 FREE_TIER_COOLDOWN`). Consumed OPTIMISTICALLY,
-    before broadcast.
+  - **Entitlement** — `isSubscriptionActive(payer)` read server-side via TronGrid
+    (`src/lib/tron/serverRead.ts`). Active → unlimited (credit untouched). If not active,
+    the gate then checks **referral credit** (`checkCredit` → `consume_referral_credit`, one
+    atomic RPC): a running or freshly-activated credit month → unlimited too. Unverifiable
+    chain read **and** no credit → `503`, fail closed. A banked month is only ever consumed
+    when the chain is DEFINITIVELY inactive — never on an unverifiable read. See
+    [`08-referrals-and-credit.md`](./08-referrals-and-credit.md).
+  - **Free tier** — reached only with no subscription and no credit. `count > 1` → `402
+    FREE_TIER_BATCH_LIMIT`; `count === 1` → an ATOMIC quota consume (`200` authorized, or
+    `402 FREE_TIER_COOLDOWN`). Consumed OPTIMISTICALLY, before broadcast.
 - **Gate 3 — disperse.** Only reached on a `200`. Runs `runDisperse` (§5). On a free-mode
   failure/rejection the client calls `POST /api/payout/release` to restore the slot (the
   server re-verifies the txid on-chain; never trusts the client). See [`07`](./07-freemium-gate.md).

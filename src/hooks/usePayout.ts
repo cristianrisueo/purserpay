@@ -7,6 +7,12 @@ import { useLiveQuery } from "dexie-react-hooks"
 import { storeBillingProfile, verifyRosterCompliance } from "@/app/actions/compliance"
 import { authorizePayout, releasePayout } from "@/lib/freeTier/authorizeClient"
 import { FREE_TIER_COOLDOWN_MS } from "@/lib/freeTier/gate"
+import { proveWalletControl } from "@/lib/payout/challengeClient"
+import {
+  claimReferral,
+  fetchReferralSummary,
+  type ReferralSummaryResult,
+} from "@/lib/referral/claimClient"
 import { db } from "@/lib/db"
 import type { PayeeInput } from "@/lib/payeeValidation"
 import {
@@ -81,6 +87,16 @@ function fmtBalance(units: bigint | null): number | null {
   if (units == null) return null
   // Display only — 6-dp USDT balances are well within a JS number's safe range.
   return Number(units) / 1_000_000
+}
+
+/** Credit-entitled = a free month is currently running OR banked months await. A
+ *  banked-but-not-running wallet is entitled too: its next payout lazily consumes a
+ *  month server-side. Reads the clock — call it from effects/handlers, never render. */
+function creditEntitledFrom(s: ReferralSummaryResult): boolean {
+  const running =
+    s.creditActiveUntil != null &&
+    new Date(s.creditActiveUntil).getTime() > Date.now()
+  return running || s.monthsBanked > 0
 }
 
 function withMapValue<V>(prev: Map<string, V>, ids: string[], value: V): Map<string, V> {
@@ -477,15 +493,59 @@ export function usePayout() {
     }
   }, [account, wrongNetwork])
 
+  // --- Referral credit + summary ------------------------------------------
+  // Drives the dashboard referral card AND freeMode parity: a wallet holding or
+  // running referral credit is entitled like a subscriber (the server would
+  // authorize its whole roster), so it must NOT be shown the 1-payee free UI. The
+  // server owns the balance; we only read it over our own route. creditEntitled is
+  // null while unknown — including on a read failure — so we never wrongly cap a
+  // paying customer; it's false only when the read definitively reports no credit.
+  const [referral, setReferral] = useState<ReferralSummaryResult | null>(null)
+  const [creditEntitled, setCreditEntitled] = useState<boolean | null>(null)
+
+  const refreshReferral = useCallback(async (address: string) => {
+    const s = await fetchReferralSummary(address)
+    setReferral(s)
+    setCreditEntitled(s ? creditEntitledFrom(s) : null)
+  }, [])
+
+  useEffect(() => {
+    if (!account) {
+      setReferral(null)
+      setCreditEntitled(null)
+      return
+    }
+    let cancelled = false
+    void fetchReferralSummary(account.address).then((s) => {
+      if (cancelled) return
+      setReferral(s)
+      setCreditEntitled(s ? creditEntitledFrom(s) : null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [account])
+
   // --- Free tier ----------------------------------------------------------
   // Free mode = connected on the right network with a DEFINITIVELY inactive
   // subscription (never `null`, which is the still-loading state — we don't cap
   // or nag until we know). One (1) payee every 30 days; the server is the
   // authority (see /api/payout/authorize), this flag only drives the UI.
-  const freeMode = connected && !wrongNetwork && subscriptionActive === false
+  // Credit (running or banked) makes a wallet entitled like a subscriber, so it is
+  // NOT free mode. creditEntitled must be DEFINITIVELY false (not null/unknown) to
+  // cap — same "don't nag until we know" rule as the subscription read.
+  const freeMode =
+    connected &&
+    !wrongNetwork &&
+    subscriptionActive === false &&
+    creditEntitled === false
   useEffect(() => {
     freeModeRef.current = freeMode
   }, [freeMode])
+
+  // Entitled = active on-chain subscription OR referral credit. Drives the referral
+  // card's visibility (a pure free-tier wallet sees the subscribe CTA, not the card).
+  const entitled = subscriptionActive === true || creditEntitled === true
 
   // Cooldown end (ms) after a FREE_TIER_COOLDOWN from the server; drives the
   // banner's countdown. Only meaningful in free mode.
@@ -532,7 +592,20 @@ export function usePayout() {
       setPayError(null)
       setCooldownUntil(null)
 
-      // ONE authorization round trip: OFAC + server-side subscription read +
+      // GATE 0 — prove wallet control BEFORE any server state is touched: fetch a
+      // single-use challenge and sign it (one wallet prompt, no funds move). The
+      // server recovers the signer and asserts it equals the payer, so a spoofed
+      // address can never consume this wallet's free slot or credit month. A
+      // rejection / challenge failure fails CLOSED — sign nothing, consume nothing.
+      let proof
+      try {
+        proof = await proveWalletControl(account.providerId, account.address)
+      } catch (e) {
+        setPayError(humanize(e))
+        return
+      }
+
+      // ONE authorization round trip: proof + OFAC + server-side subscription read +
       // (for count === 1) the free-tier quota, consumed OPTIMISTICALLY here BEFORE
       // any broadcast. The server is the sole authority; a throw/NETWORK_ERROR
       // fails CLOSED (nothing is signed).
@@ -541,7 +614,9 @@ export function usePayout() {
       try {
         authz = await authorizePayout(
           account.address,
-          rows.map((r) => r.address)
+          rows.map((r) => r.address),
+          proof.nonce,
+          proof.signature
         )
       } finally {
         setScreening(false)
@@ -664,7 +739,7 @@ export function usePayout() {
         //    throws (rejected / no gas / revert) nothing is stored — no orphan PII for
         //    a non-subscriber. `plan` is chosen in the SubscribeDialog selector
         //    (0 = monthly / 1 = annual); the dashboard opens it on monthly by default.
-        await runSubscribe(account.address, plan, {
+        const { txid } = await runSubscribe(account.address, plan, {
           onApproveStart: () => setSubscribePhase("approving"),
           onSigning: () => setSubscribePhase("signing"),
           onConfirming: () => setSubscribePhase("confirming"),
@@ -680,8 +755,14 @@ export function usePayout() {
         } catch (storeErr) {
           console.error("PII store failed after a confirmed subscribe:", storeErr)
         }
-        // 3) Re-read the gate → active → close the paywall.
+        // 2b) Report the confirmed subscribe to the referral loop (best-effort): it
+        //     marks this wallet a valid future referrer and, if it arrived via a
+        //     referral link, banks the referrer a free month. Never blocks the paid
+        //     user — the server reads the pp_ref cookie + re-verifies the txid itself.
+        void claimReferral(account.address, txid)
+        // 3) Re-read the gate → active → close the paywall; refresh the referral card.
         await refreshSubscription(account.address)
+        void refreshReferral(account.address)
         setPaywallOpen(false)
       } catch (e) {
         setSubscribeError(humanize(e))
@@ -689,7 +770,7 @@ export function usePayout() {
         setSubscribePhase("idle")
       }
     },
-    [account, refreshSubscription]
+    [account, refreshSubscription, refreshReferral]
   )
 
   const dismissOfac = useCallback(() => setOfacFlagged(null), [])
@@ -879,6 +960,13 @@ export function usePayout() {
     freeMode,
     cooldownUntil,
     openPaywall,
+    // referral (credit + share)
+    entitled,
+    referralEnabled: referral?.enabled ?? false,
+    referralCode: referral?.code ?? null,
+    referralMonthsBanked: referral?.monthsBanked ?? 0,
+    referralQualified: referral?.qualifiedReferrals ?? 0,
+    referralCreditActiveUntil: referral?.creditActiveUntil ?? null,
     // actions
     connect,
     disconnect,

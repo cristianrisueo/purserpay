@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { storeBillingProfile } from "@/app/actions/compliance"
+import { claimReferral } from "@/lib/referral/claimClient"
 import { NETWORK, type SubscriptionPlan } from "@/lib/tron/config"
 import { humanize, type PurserError } from "@/lib/tron/errors"
 import type { BillingPii, SubscribePhase } from "@/hooks/usePayout"
@@ -126,7 +127,7 @@ export function PricingSection() {
 
       // 1) On-chain subscribe FIRST for the chosen plan, from the user's own wallet. If
       //    this throws (rejected / no gas / revert) nothing is stored — no orphan PII.
-      await runSubscribe(address, chosenPlan, {
+      const { txid } = await runSubscribe(address, chosenPlan, {
         onApproveStart: () => setPhase("approving"),
         onSigning: () => setPhase("signing"),
         onConfirming: () => setPhase("confirming"),
@@ -142,6 +143,11 @@ export function PricingSection() {
       } catch (storeErr) {
         console.error("PII store failed after a confirmed subscribe:", storeErr)
       }
+
+      // 2b) Report the confirmed subscribe to the referral loop (best-effort) — banks
+      //     the referrer a free month if this visit arrived via a referral link. Never
+      //     blocks the paid user; the server reads the pp_ref cookie + verifies the tx.
+      void claimReferral(address, txid)
 
       // 3) Subscribed → the guard releases the dashboard.
       router.push("/dashboard")
