@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { DeleteDataButton } from "@/components/dashboard/DeleteDataButton"
 import { EmptyRoster } from "@/components/dashboard/EmptyRoster"
+import { FreeTierBanner } from "@/components/dashboard/FreeTierBanner"
 import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
@@ -18,35 +19,17 @@ export function Dashboard() {
   const payout = usePayout()
   const router = useRouter()
 
-  const {
-    connected,
-    walletHydrated,
-    subscriptionActive,
-    subscriptionChecking,
-    disconnect,
-  } = payout
+  const { connected, walletHydrated, disconnect } = payout
 
-  // Route guard (production, fail-closed). The contract is deployed, so the
-  // dashboard strictly requires a connected wallet AND an active on-chain
-  // subscription — anyone else is redirected to the landing. No dev bypass.
-  // Guarded against the initial unknown window: wait for the wallet hydrate, and
-  // for the subscription read to settle, before acting, so a genuine session is
-  // never falsely bounced during load.
+  // Route guard. Since the Free Tier, the dashboard requires only a CONNECTED
+  // wallet — a non-subscriber is admitted in FREE MODE (one payee / 30 days) and
+  // the fiscal form is no longer demanded to get in (it moved to the subscribe/
+  // checkout flow). Guarded against the initial unknown window: wait for the
+  // wallet hydrate before acting, so a genuine session is never falsely bounced.
   useEffect(() => {
     if (!walletHydrated) return
-    if (!connected) {
-      router.replace("/")
-      return
-    }
-    if (subscriptionChecking || subscriptionActive === null) return
-    if (subscriptionActive === false) router.replace("/")
-  }, [
-    connected,
-    walletHydrated,
-    subscriptionActive,
-    subscriptionChecking,
-    router,
-  ])
+    if (!connected) router.replace("/")
+  }, [connected, walletHydrated, router])
 
   // Disconnect the wallet AND leave the gated dashboard immediately.
   const handleDisconnect = useCallback(async () => {
@@ -63,9 +46,11 @@ export function Dashboard() {
         account={payout.account}
         balance={payout.balance}
         subscriptionExpiresAt={payout.subscriptionExpiresAt}
+        freeMode={payout.freeMode}
         walletError={payout.walletError}
         onConnect={payout.connect}
         onDisconnect={handleDisconnect}
+        onSubscribe={payout.openPaywall}
       />
 
       <main className="mx-auto w-full max-w-[1160px] px-6 py-8 md:px-8 md:py-12">
@@ -92,6 +77,15 @@ export function Dashboard() {
           />
         ) : (
           <>
+            {payout.freeMode ? (
+              <div className="mb-5">
+                <FreeTierBanner
+                  cooldownUntil={payout.cooldownUntil}
+                  onSubscribe={payout.openPaywall}
+                />
+              </div>
+            ) : null}
+
             <div className="mb-5">
               <PayoutControls
                 connected={payout.connected}
@@ -107,6 +101,7 @@ export function Dashboard() {
                 paying={payout.paying}
                 verifying={payout.verifying}
                 canPayAll={payout.canPayAll}
+                freeMode={payout.freeMode}
                 batchPhase={payout.batchPhase}
                 payError={payout.payError}
                 rosterCount={payout.roster.length}
@@ -114,6 +109,7 @@ export function Dashboard() {
                 onImportRoster={payout.importRoster}
                 onPayAll={payout.payAll}
                 onReset={payout.reset}
+                onSubscribe={payout.openPaywall}
               />
             </div>
 
@@ -125,8 +121,10 @@ export function Dashboard() {
               paying={payout.paying}
               connected={payout.connected}
               wrongNetwork={payout.wrongNetwork}
+              freeMode={payout.freeMode}
               verifyByPayee={payout.verifyByPayee}
               rowBlocked={payout.rowBlocked}
+              rowOfacFlagged={payout.rowOfacFlagged}
               rowTxState={payout.rowTxState}
               txidByPayee={payout.txidByPayee}
               payRow={payout.payRow}
@@ -172,6 +170,7 @@ export function Dashboard() {
         phase={payout.subscribePhase}
         error={payout.subscribeError}
         networkName={payout.networkName}
+        defaultPlan={0}
       />
       <OfacBlockedDialog
         flagged={payout.ofacFlagged}

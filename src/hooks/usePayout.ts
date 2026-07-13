@@ -1,10 +1,12 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { RowSelectionState } from "@tanstack/react-table"
+import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useLiveQuery } from "dexie-react-hooks"
 
 import { storeBillingProfile, verifyRosterCompliance } from "@/app/actions/compliance"
+import { authorizePayout, releasePayout } from "@/lib/freeTier/authorizeClient"
+import { FREE_TIER_COOLDOWN_MS } from "@/lib/freeTier/gate"
 import { db } from "@/lib/db"
 import type { PayeeInput } from "@/lib/payeeValidation"
 import {
@@ -26,7 +28,7 @@ import {
 } from "@/lib/receipts"
 import { downloadReceiptPdf, downloadReportPdf } from "@/lib/receiptPdf"
 import { isTargetNetwork } from "@/lib/tron/client"
-import { NETWORK, txExplorerUrl } from "@/lib/tron/config"
+import { NETWORK, txExplorerUrl, type SubscriptionPlan } from "@/lib/tron/config"
 import { toBaseUnits } from "@/lib/tron/amount"
 import {
   getUsdtBalance,
@@ -126,7 +128,29 @@ export function usePayout() {
     )
   }, [payments, roster])
 
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [rowSelection, setRowSelectionRaw] = useState<RowSelectionState>({})
+
+  // In free mode the roster can have at most ONE selected row (radio behavior).
+  // The table calls this setter; internal effects use setRowSelectionRaw directly
+  // (they enforce the cap themselves where needed). Reads freeMode via a ref so it
+  // always sees the latest without being re-created.
+  const freeModeRef = useRef(false)
+  const setRowSelection = useCallback<OnChangeFn<RowSelectionState>>((updater) => {
+    setRowSelectionRaw((prev) => {
+      const next =
+        typeof updater === "function"
+          ? (updater as (p: RowSelectionState) => RowSelectionState)(prev)
+          : updater
+      if (!freeModeRef.current) return next
+      const prevOn = new Set(Object.keys(prev).filter((k) => prev[k]))
+      const nextOn = Object.keys(next).filter((k) => next[k])
+      if (nextOn.length <= 1) return next
+      // Keep the newly-added id (radio); on a select-all, keep the first.
+      const added = nextOn.filter((id) => !prevOn.has(id))
+      const keep = added.length > 0 ? added[added.length - 1] : nextOn[0]
+      return { [keep]: true }
+    })
+  }, [])
 
   // --- Wallet -------------------------------------------------------------
   const [account, setAccount] = useState<WalletAccount | null>(null)
@@ -293,7 +317,37 @@ export function usePayout() {
     return m
   }, [roster, levelFor])
 
-  // --- Rule 1 auto-check (unchanged behavior) -----------------------------
+  // --- Roster-wide OFAC screen (the "value demo") -------------------------
+  // Screen EVERY roster address server-side after any change and flag sanctioned
+  // rows in the table — even in free mode, where only one row can ever be paid.
+  // This is advisory UI only; the authoritative block still happens at pay time in
+  // the authorize route (fail-closed). Screening needs no wallet (it's a server
+  // action over salted hashes), so it runs regardless of connection.
+  const [rowOfacFlagged, setRowOfacFlagged] = useState<Map<string, true>>(new Map())
+  useEffect(() => {
+    if (roster.length === 0) {
+      setRowOfacFlagged(new Map())
+      return
+    }
+    let cancelled = false
+    verifyRosterCompliance(roster.map((p) => p.address))
+      .then((flagged) => {
+        if (cancelled) return
+        const flaggedSet = new Set(flagged)
+        const m = new Map<string, true>()
+        for (const p of roster) if (flaggedSet.has(p.address)) m.set(p.id, true)
+        setRowOfacFlagged(m)
+      })
+      .catch(() => {
+        // Screening unavailable → clear advisory flags; the pay-time gate blocks.
+        if (!cancelled) setRowOfacFlagged(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [addressesKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Rule 1 auto-check (free-mode aware) --------------------------------
   const knownIds = useRef<Set<string>>(new Set())
   useEffect(() => {
     const newIds = roster
@@ -301,7 +355,13 @@ export function usePayout() {
       .map((p) => p.id)
     roster.forEach((p) => knownIds.current.add(p.id))
     if (newIds.length === 0) return
-    setRowSelection((prev) => {
+    setRowSelectionRaw((prev) => {
+      if (freeModeRef.current) {
+        // Free mode: at most ONE selected. Keep an existing selection, else pick
+        // the first newly-added row (the free action stays one click).
+        if (Object.values(prev).some(Boolean)) return prev
+        return { [newIds[0]]: true }
+      }
       const next = { ...prev }
       newIds.forEach((id) => {
         next[id] = true
@@ -417,10 +477,41 @@ export function usePayout() {
     }
   }, [account, wrongNetwork])
 
-  // Rule 5 — never enable a pay that would revert or silently skip anyone.
+  // --- Free tier ----------------------------------------------------------
+  // Free mode = connected on the right network with a DEFINITIVELY inactive
+  // subscription (never `null`, which is the still-loading state — we don't cap
+  // or nag until we know). One (1) payee every 30 days; the server is the
+  // authority (see /api/payout/authorize), this flag only drives the UI.
+  const freeMode = connected && !wrongNetwork && subscriptionActive === false
+  useEffect(() => {
+    freeModeRef.current = freeMode
+  }, [freeMode])
+
+  // Cooldown end (ms) after a FREE_TIER_COOLDOWN from the server; drives the
+  // banner's countdown. Only meaningful in free mode.
+  const [cooldownUntil, setCooldownUntil] = useState<number | null>(null)
+
+  // When free mode turns on after the roster already auto-checked everyone (the
+  // subscription read resolves to "none" a beat later), collapse to a single
+  // eligible row so the 1-payee cap holds. Idempotent — a ≤1 selection is left as is.
+  useEffect(() => {
+    if (!freeMode) return
+    setRowSelectionRaw((prev) => {
+      const ids = Object.keys(prev).filter((k) => prev[k])
+      if (ids.length <= 1) return prev
+      const keep = ids.find((id) => !paidIds.has(id) && !rowBlocked.has(id)) ?? ids[0]
+      return { [keep]: true }
+    })
+  }, [freeMode, paidIds, rowBlocked])
+
+  const openPaywall = useCallback(() => setPaywallOpen(true), [])
+
+  // Rule 5 — never enable a pay that would revert or silently skip anyone. In free
+  // mode "Pay all" is always locked (subscribe to pay the whole roster).
   const canPayAll =
     connected &&
     !wrongNetwork &&
+    !freeMode &&
     !paying &&
     !screening &&
     payable.length > 0 &&
@@ -431,54 +522,77 @@ export function usePayout() {
     async (rows: Payee[]) => {
       if (!account || rows.length === 0) return
 
-      // Gate 1 — subscription (a frontend paywall). Without a confirmed-active
-      // subscription, open the Subscribe dialog and stop: nothing is signed.
-      // Fail-closed — anything but `true` (unknown / inactive / unreadable)
-      // routes to the paywall, so the gate can never silently open.
-      if (subscriptionActive !== true) {
+      // Free-mode shortcut: a batch of more than one can never be a free payout —
+      // go straight to the paywall, no round trip.
+      if (freeModeRef.current && rows.length > 1) {
         setPaywallOpen(true)
         return
       }
 
       setPayError(null)
+      setCooldownUntil(null)
 
-      // Gate 2 — OFAC. Screen every recipient server-side before any signature.
-      // A hit blocks the whole batch (atomic — never a partial workaround); a
-      // throw fails CLOSED, because an unverifiable roster must never look clean.
+      // ONE authorization round trip: OFAC + server-side subscription read +
+      // (for count === 1) the free-tier quota, consumed OPTIMISTICALLY here BEFORE
+      // any broadcast. The server is the sole authority; a throw/NETWORK_ERROR
+      // fails CLOSED (nothing is signed).
+      setScreening(true)
+      let authz
       try {
-        setScreening(true)
-        const flagged = await verifyRosterCompliance(rows.map((r) => r.address))
-        if (flagged.length > 0) {
-          setOfacFlagged(flagged)
-          return
-        }
-      } catch (e) {
-        setPayError(
-          new PurserError(
-            "unknown",
-            "Couldn't screen recipients against the sanctions list — nothing was sent. Try again in a moment.",
-            e instanceof Error ? e.message : String(e)
-          )
+        authz = await authorizePayout(
+          account.address,
+          rows.map((r) => r.address)
         )
-        return
       } finally {
         setScreening(false)
       }
 
-      // Gate 3 — disperse. Only reached when subscribed AND the roster is clean.
+      if (!authz.ok) {
+        switch (authz.code) {
+          case "OFAC_BLOCKED":
+            setOfacFlagged(authz.flagged)
+            return
+          case "FREE_TIER_BATCH_LIMIT":
+            // Only reachable if a >1 batch slipped past the shortcut — nudge to subscribe.
+            setPaywallOpen(true)
+            return
+          case "FREE_TIER_COOLDOWN":
+            setCooldownUntil(new Date(authz.nextAvailableAt).getTime())
+            return
+          default:
+            // SUBSCRIPTION_UNVERIFIABLE / SCREENING_UNAVAILABLE / NETWORK_ERROR /
+            // BAD_REQUEST — all fail closed with a calm message; nothing was sent.
+            setPayError(
+              new PurserError(
+                "unknown",
+                "Couldn't authorize this payout — nothing was sent. Try again in a moment.",
+                "message" in authz ? authz.message : authz.code
+              )
+            )
+            return
+        }
+      }
+
+      // Authorized. On the free path, remember the consumed slot so a failed/
+      // rejected broadcast can restore it (so a mistake never burns the one free slot).
+      const consumedAt = authz.mode === "free" ? authz.consumedAt : null
+      let broadcastTxid: string | null = null
+
       const disperseRows: DisperseRow[] = rows.map((p) => ({
         id: p.id,
         address: p.address,
         amount: p.amount,
       }))
+      let outcome: Awaited<ReturnType<typeof runDisperse>> | undefined
       try {
-        await runDisperse(account.address, disperseRows, {
+        outcome = await runDisperse(account.address, disperseRows, {
           onApproveStart: () => setBatchPhase({ kind: "approving" }),
           onBatchSigning: (index, total, rowIds) => {
             setBatchPhase({ kind: "signing", index, total })
             setRowTxState((prev) => withMapValue(prev, rowIds, "signing"))
           },
           onBatchPending: (index, total, txid, rowIds) => {
+            broadcastTxid = txid
             setBatchPhase({ kind: "confirming", index, total })
             setRowTxState((prev) => withMapValue(prev, rowIds, "pending"))
             setSessionTxid((prev) => withMapValue(prev, rowIds, txid))
@@ -499,8 +613,24 @@ export function usePayout() {
         setBatchPhase({ kind: "idle" })
         void refreshBalance(account.address)
       }
+
+      // Free-tier bookkeeping. On success, flip the banner straight to the cooldown
+      // countdown (the slot is now used for 30 days). On failure/rejection, ask the
+      // server to restore the slot — it re-verifies the txid on-chain and refuses to
+      // restore a payout that genuinely succeeded (never trusts this client claim).
+      if (consumedAt) {
+        const succeeded =
+          outcome != null &&
+          outcome.failure == null &&
+          outcome.confirmed.length > 0
+        if (succeeded) {
+          setCooldownUntil(new Date(consumedAt).getTime() + FREE_TIER_COOLDOWN_MS)
+        } else {
+          void releasePayout(account.address, broadcastTxid, consumedAt)
+        }
+      }
     },
-    [account, subscriptionActive, refreshBalance]
+    [account, refreshBalance]
   )
 
   const payAll = useCallback(() => {
@@ -526,15 +656,15 @@ export function usePayout() {
 
   // --- Subscription action -------------------------------------------------
   const subscribe = useCallback(
-    async (pii: BillingPii) => {
+    async (pii: BillingPii, plan: SubscriptionPlan) => {
       if (!account) return
       setSubscribeError(null)
       try {
         // 1) Pay the subscription on-chain FIRST, from the user's OWN wallet. If this
         //    throws (rejected / no gas / revert) nothing is stored — no orphan PII for
-        //    a non-subscriber. The dashboard paywall subscribes on the monthly plan (0);
-        //    the annual tier is chosen on the landing pricing section.
-        await runSubscribe(account.address, 0, {
+        //    a non-subscriber. `plan` is chosen in the SubscribeDialog selector
+        //    (0 = monthly / 1 = annual); the dashboard opens it on monthly by default.
+        await runSubscribe(account.address, plan, {
           onApproveStart: () => setSubscribePhase("approving"),
           onSigning: () => setSubscribePhase("signing"),
           onConfirming: () => setSubscribePhase("confirming"),
@@ -655,7 +785,7 @@ export function usePayout() {
   const deleteAllData = useCallback(async () => {
     await Promise.all([db.payees.clear(), db.payments.clear(), db.meta.clear()])
     knownIds.current = new Set()
-    setRowSelection({})
+    setRowSelectionRaw({})
     setRowTxState(new Map())
     setSessionTxid(new Map())
     setPayError(null)
@@ -663,7 +793,7 @@ export function usePayout() {
 
   // --- Roster CRUD (unchanged, still Dexie) -------------------------------
   const forgetRow = useCallback((id: string) => {
-    setRowSelection((prev) => {
+    setRowSelectionRaw((prev) => {
       if (!(id in prev)) return prev
       const next = { ...prev }
       delete next[id]
@@ -714,6 +844,7 @@ export function usePayout() {
     verifyDegraded,
     verifyByPayee,
     rowBlocked,
+    rowOfacFlagged,
     // tx state
     rowTxState,
     txidByPayee,
@@ -744,6 +875,10 @@ export function usePayout() {
     subscribePhase,
     subscribeError,
     ofacFlagged,
+    // free tier
+    freeMode,
+    cooldownUntil,
+    openPaywall,
     // actions
     connect,
     disconnect,

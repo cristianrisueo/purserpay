@@ -10,25 +10,48 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import type { BillingPii, SubscribePhase } from "@/hooks/usePayout"
-import { SUBSCRIPTION_PRICE_USDT } from "@/lib/tron/config"
+import {
+  SUBSCRIPTION_PRICE_ANNUAL_USDT,
+  SUBSCRIPTION_PRICE_USDT,
+  type SubscriptionPlan,
+} from "@/lib/tron/config"
 import type { PurserError } from "@/lib/tron/errors"
 
 type SubscribeDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onSubscribe: (pii: BillingPii) => Promise<void>
+  onSubscribe: (pii: BillingPii, plan: SubscriptionPlan) => Promise<void>
   phase: SubscribePhase
   error: PurserError | null
   networkName: string
-  /** Plan price in whole USDT (150 monthly / 1,500 annual). Defaults to monthly so
-   *  the dashboard paywall caller stays unchanged. */
-  priceUsdt?: number
-  /** Cadence word for the copy ("a month" / "a year"). Defaults to monthly. */
-  periodLabel?: string
+  /** Which plan the selector opens on. Dashboard paywall passes 0 (monthly, the
+   *  deliberate default for an irreversible payment); the landing passes the plan
+   *  the user already picked in the pricing cards. Defaults to monthly. */
+  defaultPlan?: SubscriptionPlan
 }
+
+/** The two on-chain plans, priced from config (never hardcoded). 30/365-day period
+ *  labels mirror the contract's SUBSCRIPTION_PERIOD / _ANNUAL and the landing cards. */
+const PLAN_OPTIONS: {
+  plan: SubscriptionPlan
+  name: string
+  priceUsdt: number
+  period: string
+  badge?: string
+}[] = [
+  { plan: 0, name: "Monthly", priceUsdt: SUBSCRIPTION_PRICE_USDT, period: "30 days" },
+  {
+    plan: 1,
+    name: "Annual",
+    priceUsdt: SUBSCRIPTION_PRICE_ANNUAL_USDT,
+    period: "365 days",
+    badge: "best value",
+  },
+]
 
 /** Button content per phase. The on-chain settle (approve/sign/confirm) shows one
  *  "Settling on-chain…" spinner; only after it confirms does "storing" show "Saving
@@ -55,16 +78,17 @@ export function SubscribeDialog({
   phase,
   error,
   networkName,
-  priceUsdt = SUBSCRIPTION_PRICE_USDT,
-  periodLabel = "a month",
+  defaultPlan = 0,
 }: SubscribeDialogProps) {
   const [name, setName] = useState("")
   const [country, setCountry] = useState("")
   const [taxId, setTaxId] = useState("")
+  const [plan, setPlan] = useState<SubscriptionPlan>(defaultPlan)
   const [attempted, setAttempted] = useState(false)
 
-  // Reset the form whenever the dialog transitions to open — a render-time
-  // derivation (not an effect), matching PayeeFormDialog, so it can't cascade.
+  // Reset the form (and the plan, back to defaultPlan) whenever the dialog
+  // transitions to open — a render-time derivation (not an effect), matching
+  // PayeeFormDialog, so it can't cascade.
   const [wasOpen, setWasOpen] = useState(open)
   if (open !== wasOpen) {
     setWasOpen(open)
@@ -72,9 +96,15 @@ export function SubscribeDialog({
       setName("")
       setCountry("")
       setTaxId("")
+      setPlan(defaultPlan)
       setAttempted(false)
     }
   }
+
+  // Price + cadence follow the selected plan, read from config (never hardcoded).
+  const priceUsdt =
+    plan === 1 ? SUBSCRIPTION_PRICE_ANNUAL_USDT : SUBSCRIPTION_PRICE_USDT
+  const periodLabel = plan === 1 ? "a year" : "a month"
 
   const trimmed = {
     name: name.trim(),
@@ -94,8 +124,9 @@ export function SubscribeDialog({
     setAttempted(true)
     if (!ok || busy) return
     // The hook closes this dialog on success (after re-reading the gate) and
-    // surfaces `error` on failure; we never persist the PII locally.
-    await onSubscribe(trimmed)
+    // surfaces `error` on failure; we never persist the PII locally. The selected
+    // plan is passed through to runSubscribe.
+    await onSubscribe(trimmed, plan)
   }
 
   return (
@@ -104,11 +135,57 @@ export function SubscribeDialog({
         <DialogHeader>
           <DialogTitle>Activate your subscription</DialogTitle>
           <DialogDescription>
-            PurserPay is {priceUsdt} USDT {periodLabel}, paid on-chain from your
-            own wallet. Enter your billing details to continue — they're encrypted
-            and stored apart from your payouts.
+            PurserPay is {priceUsdt.toLocaleString("en-US")} USDT {periodLabel},
+            paid on-chain from your own wallet. Enter your billing details to
+            continue — they're encrypted and stored apart from your payouts.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Plan selector — a two-option toggle mirroring the landing pricing cards.
+            The displayed price/cadence above follows the selection; the chosen plan
+            is what gets signed. Locked while a subscription is settling. */}
+        <div
+          role="radiogroup"
+          aria-label="Subscription plan"
+          className="grid grid-cols-2 gap-2"
+        >
+          {PLAN_OPTIONS.map((opt) => {
+            const active = plan === opt.plan
+            return (
+              <button
+                key={opt.plan}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                disabled={busy}
+                onClick={() => setPlan(opt.plan)}
+                className={cn(
+                  "rounded-[10px] border px-3.5 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                  active
+                    ? "border-primary bg-primary/[0.04] ring-1 ring-inset ring-primary"
+                    : "border-border hover:bg-muted/40"
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[13px] font-semibold text-foreground">
+                    {opt.name}
+                  </span>
+                  {opt.badge ? (
+                    <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                      {opt.badge}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-1.5 text-[15px] font-semibold tabular-nums text-foreground">
+                  {opt.priceUsdt.toLocaleString("en-US")} USDT
+                </div>
+                <div className="text-[12px] text-muted-foreground">
+                  per {opt.period}
+                </div>
+              </button>
+            )
+          })}
+        </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
           <div className="flex flex-col gap-1.5">

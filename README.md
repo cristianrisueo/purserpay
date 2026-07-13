@@ -83,6 +83,7 @@ action, zero fear, beauty = trust.
 | Contract | own `PurserPay.sol` (Foundry) — `disperse` + `subscribe` |
 | Chain | **TRON only**, **USDT (TRC20) only** — Nile testnet today |
 | Billing | on-chain subscription: **150 USDT/mo** or **1,500 USDT/yr** (no fiat, no Stripe) |
+| Free tier | **1 payee / payer wallet / 30 days**, forever — a mainnet smoke test. Off-chain licence gate ([`docs/07`](./docs/07-freemium-gate.md)); everything else needs the subscription. |
 
 - Landing `/` is server-rendered; the dashboard `/dashboard` is client-only (`ssr:false`)
   because it reads IndexedDB and the injected wallet at mount.

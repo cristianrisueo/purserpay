@@ -87,8 +87,14 @@ Key facts encoded above:
   `tron/*` out of the server graph.
 - **The roster never crosses the server boundary.** The only things that leave the
   browser are (a) the transaction the user signs, sent by their own wallet to TRON, and
-  (b) recipient addresses handed to the OFAC server action, which hashes them transiently
-  and never persists them. See [`03-data-flow.md`](./03-data-flow.md).
+  (b) recipient addresses handed to the OFAC server action / the `/api/payout/authorize`
+  route, which hash them transiently and never persist them. See
+  [`03-data-flow.md`](./03-data-flow.md).
+- **The payout gate is a route handler, not a server action.** `POST /api/payout/authorize`
+  fuses OFAC + a server-side subscription read + the free-tier quota into one round trip
+  (HTTP status codes); `POST /api/payout/release` refunds a free slot on a verified failure.
+  Both are Node-runtime, service-role, and never touch funds/keys. See
+  [`07-freemium-gate.md`](./07-freemium-gate.md).
 
 ## 4. Directory map
 
@@ -100,7 +106,10 @@ src/
 │   ├── dashboard/page.tsx       # "/dashboard" (client-only, ssr:false) → views/Dashboard
 │   ├── legal/page.tsx           # legal copy
 │   ├── privacy/page.tsx         # privacy copy
-│   └── actions/compliance.ts    # "use server" — OFAC + PII (service-role Supabase)
+│   ├── actions/compliance.ts    # "use server" — OFAC + PII (service-role Supabase)
+│   └── api/payout/              # ROUTE HANDLERS — the payout authorization gate
+│       ├── authorize/route.ts   #   OFAC + server-side subscription + free-tier consume
+│       └── release/route.ts     #   free-tier refund (on-chain re-verify, fail-closed)
 ├── views/
 │   ├── Landing.tsx              # single-page IA: #why → #how → #pricing → FAQ
 │   └── Dashboard.tsx            # route guard + wires usePayout to the components
@@ -111,6 +120,8 @@ src/
 │   ├── dashboard/               # PayoutTable, PayoutControls, SubscribeDialog, OfacBlockedDialog, …
 │   └── ui/                      # shadcn primitives (owned, in-repo)
 ├── lib/
+│   ├── compliance/ofac.ts       # screenRecipients — shared OFAC core (action + route)
+│   ├── freeTier/                # gate.ts (pure decision) · quota.ts · refund.ts · authorizeClient.ts
 │   ├── db.ts                    # Dexie schema (payees, payments, meta)
 │   ├── roster.ts                # roster CRUD + atomic CSV replace
 │   ├── receipts.ts              # receipt persistence + green-cycle logic
@@ -126,6 +137,8 @@ src/
 │       ├── validation.ts        # the ✓/✓✓ double-check + privacy invariant
 │       ├── disperse.ts          # approve → disperse money path (atomic batches)
 │       ├── subscription.ts      # on-chain subscription gate (fail-closed)
+│       ├── serverRead.ts        # SERVER-only keyless reads (sub + txid) for the gate
+│       │                        #   route handlers — never signs, non-custodial
 │       ├── abi.ts               # minimal ABIs + custom-error selector table
 │       ├── amount.ts            # human ↔ base-unit conversion (exact)
 │       └── errors.ts            # PurserError + revert decoding → calm messages

@@ -12,6 +12,7 @@
 // hash recipient addresses transiently for screening (never persisted) and store the
 // account holder's PII encrypted, keyed by a dissociated wallet hash.
 
+import { screenRecipients } from "@/lib/compliance/ofac"
 import { hashWalletAddress } from "@/lib/crypto"
 import { createSupabaseServiceClient } from "@/lib/supabase/server"
 
@@ -27,57 +28,19 @@ function requireServerSecret(name: "WALLET_SALT" | "PII_ENCRYPTION_KEY"): string
 /**
  * OFAC-screen a roster of recipient addresses.
  *
- * Hashes each address server-side with WALLET_SALT (the client can't — the salt is
- * server-only) and checks the salted hashes against the ofac_sanctions table via the
- * service-role client. Returns the ORIGINAL addresses that are sanctioned; an empty
- * array means the roster is verified clean.
+ * Thin Server Action wrapper over the shared, server-only `screenRecipients`
+ * core (src/lib/compliance/ofac.ts) — the SAME implementation the payout
+ * authorization route uses, so the salt and normalization can never drift. Used
+ * by the dashboard's roster-wide "value demo" screen (usePayout). Returns the
+ * ORIGINAL addresses that are sanctioned; an empty array means clean.
  *
  * FAILS CLOSED: a missing secret or any DB error throws. The caller must treat a
- * thrown error as "cannot verify -> block the batch", never as "clean". An empty
- * array is only ever returned after a successful check.
- *
- * Nothing is persisted here — the addresses are hashed only to run the lookup, in
- * keeping with the roster staying device-local.
+ * thrown error as "cannot verify -> block the batch", never as "clean". Nothing
+ * is persisted — addresses are hashed only to run the lookup (roster stays
+ * device-local).
  */
 export async function verifyRosterCompliance(addresses: string[]): Promise<string[]> {
-  if (!Array.isArray(addresses) || addresses.length === 0) {
-    return []
-  }
-
-  const salt = requireServerSecret("WALLET_SALT")
-
-  // hash -> original address. Keying by hash dedupes automatically and lets us map a
-  // sanctioned hash back to the exact address the caller passed in.
-  const hashToAddress = new Map<string, string>()
-  for (const address of addresses) {
-    if (typeof address !== "string" || address.trim() === "") {
-      continue // skip blanks rather than hash-throwing on them
-    }
-    hashToAddress.set(hashWalletAddress(address, salt), address)
-  }
-  if (hashToAddress.size === 0) {
-    return []
-  }
-
-  const supabase = createSupabaseServiceClient()
-  const { data, error } = await supabase
-    .from("ofac_sanctions")
-    .select("wallet_hash")
-    .in("wallet_hash", [...hashToAddress.keys()])
-
-  if (error) {
-    // Fail closed — an unverifiable roster must never look clean.
-    throw new Error(`OFAC screening failed: ${error.message}`)
-  }
-
-  const flagged: string[] = []
-  for (const row of data ?? []) {
-    const original = hashToAddress.get(row.wallet_hash as string)
-    if (original) {
-      flagged.push(original)
-    }
-  }
-  return flagged
+  return screenRecipients(addresses)
 }
 
 /**

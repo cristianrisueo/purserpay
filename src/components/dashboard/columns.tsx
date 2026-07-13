@@ -23,10 +23,14 @@ declare module "@tanstack/react-table" {
     paying: boolean
     connected: boolean
     wrongNetwork: boolean
+    /** free tier — the roster caps to ONE selected row; select-all is hidden. */
+    freeMode: boolean
     /** address-verification level per payee id (✓ / ✓✓ / invalid). */
     verifyByPayee: Map<string, VerifyLevel>
     /** payees that can't be paid, with why (surfaced, never silently skipped). */
     rowBlocked: Map<string, BlockReason>
+    /** payees whose address matched the OFAC list (advisory; pay-time gate blocks). */
+    rowOfacFlagged: Map<string, true>
     /** live tx state per payee id during a payout. */
     rowTxState: Map<string, TxState>
     /** tx hash per payee id (for the Tronscan link on a paid/pending row). */
@@ -42,19 +46,21 @@ declare module "@tanstack/react-table" {
 export const columns: ColumnDef<Payee>[] = [
   {
     id: "select",
-    header: ({ table }) => (
-      <Checkbox
-        checked={
-          table.getIsAllRowsSelected()
-            ? true
-            : table.getIsSomeRowsSelected()
-              ? "indeterminate"
-              : false
-        }
-        onCheckedChange={(value) => table.toggleAllRowsSelected(!!value)}
-        aria-label="Select all payees"
-      />
-    ),
+    header: ({ table }) =>
+      // Free tier caps selection to one row, so a "select all" is meaningless.
+      table.options.meta!.freeMode ? null : (
+        <Checkbox
+          checked={
+            table.getIsAllRowsSelected()
+              ? true
+              : table.getIsSomeRowsSelected()
+                ? "indeterminate"
+                : false
+          }
+          onCheckedChange={(value) => table.toggleAllRowsSelected(!!value)}
+          aria-label="Select all payees"
+        />
+      ),
     cell: ({ row }) => (
       <Checkbox
         checked={row.getIsSelected()}
@@ -82,7 +88,9 @@ export const columns: ColumnDef<Payee>[] = [
     accessorKey: "address",
     header: "Address",
     cell: ({ row, table }) => {
-      const level = table.options.meta!.verifyByPayee.get(row.original.id) ?? "valid-format"
+      const meta = table.options.meta!
+      const level = meta.verifyByPayee.get(row.original.id) ?? "valid-format"
+      const sanctioned = meta.rowOfacFlagged.has(row.original.id)
       return (
         <div className="flex min-w-0 flex-col gap-1">
           <span
@@ -91,7 +99,13 @@ export const columns: ColumnDef<Payee>[] = [
           >
             {truncateAddress(row.original.address)}
           </span>
-          <VerifyBadge level={level} />
+          {sanctioned ? (
+            <span className="inline-flex w-fit items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
+              Sanctioned — blocked
+            </span>
+          ) : (
+            <VerifyBadge level={level} />
+          )}
         </div>
       )
     },
@@ -137,7 +151,8 @@ export const columns: ColumnDef<Payee>[] = [
         !meta.connected ||
         meta.wrongNetwork ||
         meta.paying ||
-        Boolean(blocked)
+        Boolean(blocked) ||
+        meta.rowOfacFlagged.has(id)
 
       // Icon button (globe = opens the tx on the Tronscan website). The hover
       // title + aria-label carry the meaning; Slot forwards them onto the <a>.

@@ -94,16 +94,22 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
   and Edge middleware carry the server-side logic — hiding API keys, enforcing OFAC.
   The public landing is a single page — **Why us (`#why`) → How it works (`#how`) →
   Pricing (`#pricing`) → FAQ** — with a **dynamic 3-state wallet CTA** in the nav
-  (Connect wallet → Activate subscription → Go to dashboard) that reads state via the
-  shared `lib/tron/wallet.ts` + `subscription.ts` and routes the subscribe flow to the
-  dashboard. **How it works** runs Modules 01–03 on one symmetric 50/50 rhythm (copy
+  (Connect Wallet → Go to Dashboard) that **re-reads wallet state
+  silently on mount** (via `getAddress()` — never a connect prompt on load) using the
+  shared `lib/tron/wallet.ts` + `subscription.ts`, shows a neutral resolving state so a
+  connected user never flashes "Connect Wallet", and routes into the dashboard: an
+  unsubscribed-but-connected wallet ("Go to Dashboard") lands in **free mode**, a subscribed
+  one goes straight in. **How it works** runs Modules 01–03 on one symmetric 50/50 rhythm (copy
   left, cards/receipt-preview right) with a 16:9 walkthrough slot as 04. The **Pricing**
   section's own **Subscribe** button is the exception: it subscribes **inline** — connect
   the wallet if needed, then `runSubscribe` from the user's own wallet (fail-closed with a
-  calm "not deployed yet" until the contract ships). NOTE: only the flat monthly
-  `subscribe()` / 150-USDT path exists on-chain; the Annual tier is selection + display
-  until an annual contract method is added (a contract change — out of V1 scope, flag
-  first). Landing and dashboard stay 100% separated; **design tokens are unchanged**.
+  calm "not deployed yet" until the contract ships). The on-chain `subscribe(uint8 planType)`
+  supports **both** plans — `0` = monthly (150 USDT / 30 days), `1` = annual
+  (1,500 USDT / 365 days) — and both are signed from the landing Pricing section **and** the
+  dashboard subscribe modal, which now carries a plan selector (opening on **monthly** by
+  default, since the payment is on-chain and irreversible; the landing opens it on the card
+  the user picked). Only the two fee amounts are owner-adjustable. Landing and dashboard stay
+  100% separated; **design tokens are unchanged**.
 - **UI:** shadcn/ui + Tailwind + Radix. Components copied into the repo (we own them).
 - **Table (the core of the app):** TanStack Table via shadcn data-table.
 - **Persistence — two tiers:**

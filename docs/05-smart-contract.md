@@ -56,6 +56,7 @@ the role. See [`02-non-custodial.md`](./02-non-custodial.md) for how this reconc
 | Contract's own token balance is always 0 | every transfer is direct payer→recipient / subscriber→treasury; no code path receives tokens. Foundry `invariant_*` test. |
 | `usdt`, `treasuryWallet` never change | `immutable`, set in constructor, zero-address-guarded (`ZeroAddressConfig`). |
 | `disperse` is permissionless & immutable | no `onlyOwner`, no fee, no subscription check; logic can't be upgraded (no proxy). |
+| The **free tier is NOT and CANNOT be enforced on-chain** | `disperse` gates nothing — the 1-payee/30-day free tier is an OFF-CHAIN licence gate in `/api/payout/authorize`, exactly like OFAC. A direct TronWeb `disperse()` bypasses it (accepted). Do **not** add a gate to `disperse`. → [`07`](./07-freemium-gate.md) |
 | You can't subscribe by paying less/more | `subscribe` reads the price **live from storage** and pulls exactly it; a short balance/allowance reverts the whole tx. |
 | No fee lock-out | `transferOwnership` guards the zero address; there is **no renounce**. |
 | Reentrancy-safe subscribe | CEI: the expiry write **precedes** the `transferFrom`; a failed transfer rolls the expiry back. |
@@ -96,6 +97,12 @@ initializes fees to `150e6 / 1500e6`.
 > **Known behavior (per spec):** `updateSubscriptionFees` has **no bounds** — the owner
 > could set a fee to 0 (a free period; `transferFrom` of 0 succeeds). Intentional
 > flexibility; no floor/ceiling validation. Flag if bounds are ever wanted.
+
+> **Frontend note:** **both** plans are live and reachable. The shared `SubscribeDialog`
+> (`src/components/dashboard/SubscribeDialog.tsx`) carries a plan selector, so the dashboard
+> subscribe modal **and** the landing pricing section both sign `subscribe(0)` **or**
+> `subscribe(1)` via `runSubscribe` (`src/lib/tron/subscription.ts`). There is no
+> "monthly-only" frontend path anymore.
 
 ## 5. Events & custom errors
 

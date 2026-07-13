@@ -14,7 +14,7 @@
 | Tier | What | Where | Leaves the browser? |
 | --- | --- | --- | --- |
 | **Roster** | payee names, roles, addresses, amounts; payout receipts | **IndexedDB (Dexie)** — `src/lib/db.ts` | **Never** in readable form. The only thing that leaves is the transaction the user signs. |
-| **Account + compliance** | account holder's PII (name, country, tax id); subscription state; OFAC screening data | **Supabase** — `supabase/migrations/0001_compliance_schema.sql` | Yes, but **encrypted** (PII, pgcrypto AES-256) or **salted-hashed** (wallets). Never readable. |
+| **Account + compliance** | account holder's PII (name, country, tax id); subscription state; OFAC screening data; **free-tier usage** (payer-wallet hash + last-used timestamp) | **Supabase** — `0001_compliance_schema.sql`, `0002_free_tier_usage.sql` | Yes, but **encrypted** (PII, pgcrypto AES-256) or **salted-hashed** (wallets — OFAC + free-tier). Never readable. |
 
 The dividing line is absolute: **the server never receives the roster.** See
 [`04-compliance-and-encryption.md`](./04-compliance-and-encryption.md) for the encrypted
@@ -81,16 +81,24 @@ flowchart TD
 
 Gate specifics (all in `usePayout.ts` → `runPayment`, plus `canPayAll`):
 
-- **Gate 1 — subscription (frontend paywall).** `if (subscriptionActive !== true)` → open
-  the paywall and **stop**; nothing is signed. **Fail-closed**: unknown / inactive /
-  unreadable all route to the paywall. The gate can never silently open. Status is read
-  in `src/lib/tron/subscription.ts` (see §6).
-- **Gate 2 — OFAC.** `verifyRosterCompliance(rows.map(r => r.address))` (server action).
-  A hit blocks the **whole** batch (atomic — never a partial workaround). A thrown error
-  **fails closed** — an unverifiable roster must never look clean. Details in
-  [`04`](./04-compliance-and-encryption.md).
-- **Gate 3 — disperse.** Only reached when subscribed **and** the roster is clean. Runs
-  `runDisperse` (§5).
+- **Gates 1–2 now run SERVER-SIDE in one round trip** — `POST /api/payout/authorize`
+  (`src/app/api/payout/authorize/route.ts`) fuses OFAC + a server-side subscription read +
+  the free-tier quota. The client never decides authorization; a `402/403/503`/network
+  error all **fail closed** (nothing signed). See [`07-freemium-gate.md`](./07-freemium-gate.md).
+  - **OFAC** — screen ALL recipients (`screenRecipients`, shared with the roster-wide
+    "value demo" screen). A hit blocks the **whole** batch (`403 OFAC_BLOCKED`).
+  - **Subscription** — `isSubscriptionActive(payer)` read server-side via TronGrid
+    (`src/lib/tron/serverRead.ts`). Active → unlimited. Unverifiable → `503`, fail closed.
+  - **Free tier** — `count > 1` → `402 FREE_TIER_BATCH_LIMIT`; `count === 1` → an ATOMIC
+    quota consume (`200` authorized, or `402 FREE_TIER_COOLDOWN`). Consumed OPTIMISTICALLY,
+    before broadcast.
+- **Gate 3 — disperse.** Only reached on a `200`. Runs `runDisperse` (§5). On a free-mode
+  failure/rejection the client calls `POST /api/payout/release` to restore the slot (the
+  server re-verifies the txid on-chain; never trusts the client). See [`07`](./07-freemium-gate.md).
+
+The roster still **never leaves the device**: the authorize route receives only the payer
+address, the recipient count, and the recipient addresses OFAC already required — never
+names or amounts.
 
 `canPayAll` additionally requires: connected, right network, not already paying/screening,
 `payable.length > 0`, `blockedCount === 0`, and `shortfallUnits <= 0n` (balance covers the
@@ -137,9 +145,12 @@ receipt.
   is short), then calls `subscribe(planType)` — the user's **own** wallet signs. Plan 0 =
   monthly (150/30d), plan 1 = annual (1,500/365d).
 
-> On-chain reality check: only the flat `subscribe(planType)` path exists. The dashboard
-> paywall subscribes on **plan 0** (monthly). The annual tier is selection/display on the
-> landing pricing section; there is no separate annual contract method beyond `planType=1`.
+> On-chain reality check: `subscribe(planType)` supports **both** plans live —
+> `planType 0` = monthly (150/30d), `planType 1` = annual (1,500/365d). Both the dashboard
+> subscribe modal and the landing pricing section sign the user's **chosen** plan via a
+> selector in the shared `SubscribeDialog`: the dashboard opens it on **plan 0** (monthly,
+> the deliberate default for an irreversible payment); the landing opens it on the plan the
+> user picked in the pricing cards (a last-chance confirmation).
 
 ### Subscribe order (why payment precedes storage)
 

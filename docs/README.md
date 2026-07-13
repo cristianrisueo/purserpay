@@ -44,10 +44,11 @@ subscription, and store the account holder's own PII encrypted — **never** the
 | 04 | [Compliance & encryption](./04-compliance-and-encryption.md) | the OFAC API, PII encryption (salted hash + pgcrypto), the Supabase schema + RLS, the env-var contract |
 | 05 | [Smart contract](./05-smart-contract.md) | `PurserPay.sol` function-by-function, invariants, owner governance, events/errors, the test suite |
 | 06 | [Deployment & ops](./06-deployment.md) | the deploy flow, current addresses, and the **mainnet migration checklist** |
+| 07 | [Free-tier gate](./07-freemium-gate.md) | the 1-payee/30-day free tier: the payer-wallet anchor, the atomic-consume/TOCTOU design, the refund path, the TTL, and the accepted bypass |
 
 Governance/spec and product philosophy (the 3 Laws of UX, the public-brand rules, "not in
 V1") live in the repo-root [`CLAUDE.md`](../CLAUDE.md). The Vite-era build log is
-[`SPRINTS.md`](./SPRINTS.md) (Spanish, historical). Per-task change records are
+[`SPRINTS.md`](../SPRINTS.md) (Spanish, historical). Per-task change records are
 `sprint_report.txt`.
 
 ## "Start here for X"
@@ -79,5 +80,10 @@ Break any of these and the change is wrong by definition. Sources in the linked 
   / `transferOwnership`) — never funds, keys, broadcast, pause, or `disperse`. Don't claim
   "no admin keys" without the fee-only qualification. → [`02`](./02-non-custodial.md),
   [`05`](./05-smart-contract.md)
+- **The free tier is OFF-CHAIN, anchored on the PAYER wallet hash only.** 1 payee / 30 days,
+  enforced in the authorize route (never in `disperse`, which can't and won't gate it). The
+  slot is consumed **atomically, optimistically, before broadcast** (one `INSERT … ON
+  CONFLICT … WHERE`); a verified-failed payout is refunded. Recipients are **never** stored
+  for quota (GDPR). The direct-`disperse` bypass is accepted. → [`07`](./07-freemium-gate.md)
 - **TRON only, USDT (TRC20) only.** No multichain. Contract bytecode must target
   `istanbul` (no PUSH0). → [`05`](./05-smart-contract.md), [`06`](./06-deployment.md)

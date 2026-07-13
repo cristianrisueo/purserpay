@@ -7,11 +7,7 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { storeBillingProfile } from "@/app/actions/compliance"
-import {
-  NETWORK,
-  SUBSCRIPTION_PRICE_ANNUAL_USDT,
-  SUBSCRIPTION_PRICE_USDT,
-} from "@/lib/tron/config"
+import { NETWORK, type SubscriptionPlan } from "@/lib/tron/config"
 import { humanize, type PurserError } from "@/lib/tron/errors"
 import type { BillingPii, SubscribePhase } from "@/hooks/usePayout"
 import { Section } from "./Section"
@@ -74,9 +70,6 @@ export function PricingSection() {
   const selectedTier =
     pricingTiers.find((t) => t.name === selected) ?? pricingTiers[0]
   const plan = selectedTier.plan
-  const priceUsdt =
-    plan === 1 ? SUBSCRIPTION_PRICE_ANNUAL_USDT : SUBSCRIPTION_PRICE_USDT
-  const periodLabel = plan === 1 ? "a year" : "a month"
 
   // Step 1 — "Subscribe": ensure a connected wallet (prompt only if needed), then
   // — if that wallet is already subscribed — route to the dashboard instead of
@@ -119,19 +112,21 @@ export function PricingSection() {
   }
 
   // Step 2 — "Confirm and pay": store the encrypted PII server-side FIRST, then run
-  // the on-chain subscribe on the selected plan from the user's own wallet, then
-  // route to the dashboard. Mirrors usePayout.subscribe (store → subscribe); the
-  // landing can't import the dashboard hook, so it's replicated with shared libs.
-  async function handleConfirmAndPay(pii: BillingPii) {
+  // the on-chain subscribe on the CHOSEN plan from the user's own wallet, then route
+  // to the dashboard. `chosenPlan` comes from the modal's selector (which opened on
+  // the card the user picked — a last-chance confirmation before an irreversible
+  // signature). Mirrors usePayout.subscribe (store → subscribe); the landing can't
+  // import the dashboard hook, so it's replicated with shared libs.
+  async function handleConfirmAndPay(pii: BillingPii, chosenPlan: SubscriptionPlan) {
     setSubscribeError(null)
     try {
       const { getWalletProvider, runSubscribe } = await loadTron()
       const address = getWalletProvider("tronlink").getAddress()
       if (!address) throw new Error("Connect your wallet to continue.")
 
-      // 1) On-chain subscribe FIRST for the active plan, from the user's own wallet. If
+      // 1) On-chain subscribe FIRST for the chosen plan, from the user's own wallet. If
       //    this throws (rejected / no gas / revert) nothing is stored — no orphan PII.
-      await runSubscribe(address, plan, {
+      await runSubscribe(address, chosenPlan, {
         onApproveStart: () => setPhase("approving"),
         onSigning: () => setPhase("signing"),
         onConfirming: () => setPhase("confirming"),
@@ -172,10 +167,15 @@ export function PricingSection() {
             and that's <b className="text-foreground">$250–$1,750</b> — every month,
             and it grows exactly as you do.
           </p>
-          <p className="max-w-[46ch] text-[16.5px] leading-[1.6] text-foreground">
+          <p className="mb-[18px] max-w-[46ch] text-[16.5px] leading-[1.6] text-foreground">
             <b>A flat on-chain fee wins the moment you're serious.</b> You pay the
             same whether you move $5k or $500k — 0.0% app fees, uncapped
             volume.
+          </p>
+          <p className="max-w-[46ch] text-[16.5px] leading-[1.6] text-foreground">
+            <b className="text-foreground">Try it for real, first.</b> Import your whole roster, validate 
+            every address, and send one real payout on mainnet and watch the money move. Free accounts can 
+            pay one payee every 30 days. Subscribe when you want to pay everyone in one signature.
           </p>
         </div>
 
@@ -283,8 +283,7 @@ export function PricingSection() {
         phase={phase}
         error={subscribeError}
         networkName={NETWORK.name}
-        priceUsdt={priceUsdt}
-        periodLabel={periodLabel}
+        defaultPlan={plan}
       />
     </Section>
   )

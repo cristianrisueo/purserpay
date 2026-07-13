@@ -30,8 +30,10 @@ type PayoutTableProps = {
   paying: boolean
   connected: boolean
   wrongNetwork: boolean
+  freeMode: boolean
   verifyByPayee: Map<string, VerifyLevel>
   rowBlocked: Map<string, BlockReason>
+  rowOfacFlagged: Map<string, true>
   rowTxState: Map<string, TxState>
   txidByPayee: Map<string, string>
   payRow: (id: string) => void
@@ -48,8 +50,10 @@ export function PayoutTable({
   paying,
   connected,
   wrongNetwork,
+  freeMode,
   verifyByPayee,
   rowBlocked,
+  rowOfacFlagged,
   rowTxState,
   txidByPayee,
   payRow,
@@ -70,8 +74,10 @@ export function PayoutTable({
       paying,
       connected,
       wrongNetwork,
+      freeMode,
       verifyByPayee,
       rowBlocked,
+      rowOfacFlagged,
       rowTxState,
       txidByPayee,
       payRow,

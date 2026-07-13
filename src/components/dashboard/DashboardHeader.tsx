@@ -14,9 +14,13 @@ type DashboardHeaderProps = {
   balance: number | null
   /** Subscription expiry in ms since epoch, or null when unknown / no sub. */
   subscriptionExpiresAt: number | null
+  /** True when the connected wallet has no active subscription (free tier). */
+  freeMode: boolean
   walletError: PurserError | null
   onConnect: () => void
   onDisconnect: () => void
+  /** Opens the SubscribeDialog (the free-mode "unlock full features" prompt). */
+  onSubscribe: () => void
 }
 
 export function DashboardHeader({
@@ -26,9 +30,11 @@ export function DashboardHeader({
   account,
   balance,
   subscriptionExpiresAt,
+  freeMode,
   walletError,
   onConnect,
   onDisconnect,
+  onSubscribe,
 }: DashboardHeaderProps) {
   // Same "Month day, year" format as the payout title — one source of truth
   // (formatLongDate), so every date in the app reads identically.
@@ -57,6 +63,14 @@ export function DashboardHeader({
               <span className="mr-4 text-sm text-muted-foreground">
                 Active until: {activeUntil}
               </span>
+            ) : freeMode ? (
+              <button
+                type="button"
+                onClick={onSubscribe}
+                className="mr-4 text-sm font-medium text-primary transition-colors hover:text-primary/80 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                Subscribe to unlock full features
+              </button>
             ) : null}
             <div className="flex items-center gap-2 rounded-[10px] border border-border bg-card py-2 pr-2 pl-3">
               <span

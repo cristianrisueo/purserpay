@@ -13,7 +13,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-50 border-b border-border bg-background/85 backdrop-blur-md">
       <div className="mx-auto flex w-full max-w-[1160px] flex-wrap items-center justify-between gap-x-5 gap-y-3 px-8 py-[15px]">
         <a
-          href="/#why"
+          href="/"
           className="text-[18px] font-bold tracking-[-0.02em] text-foreground"
         >
           Purser<span className="text-primary">Pay</span>

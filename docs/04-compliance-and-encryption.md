@@ -154,6 +154,29 @@ Rules (also in `.env.local.example`):
   `billing_profiles` row by `wallet_hash`). The roster is **already device-local**, so it
   is under the user's control from the start — clearing it is `deleteAllData()` on the
   device (see [`03`](./03-data-flow.md) §9), not a server operation.
+- **`free_tier_usage` is out of scope for erasure — deliberately.** It holds only a salted
+  hash of the **payer** wallet + a timestamp (no PII), and it is **not linked to the
+  account holder** (that dissociation is the point — the quota can't be correlated to an
+  identity). Its retention is governed by a **60-day TTL purge**, not the Art. 17 path. See
+  [`07-freemium-gate.md`](./07-freemium-gate.md).
+
+## 6a. Fiscal data collected at CHECKOUT, not at connect (Free Tier)
+
+Since the Free Tier, the dashboard admits any connected wallet (free mode). The fiscal
+form (name, country, tax ID) is therefore **no longer demanded to enter** — it lives only
+in the subscribe/checkout flow (`SubscribeDialog` → `storeBillingProfile`), where we
+actually need it to issue an invoice. This keeps the free path (connect → import → screen →
+pay 1) free of any KYC-shaped step, consistent with the "no-KYC" brand. The encryption /
+dissociation of that PII is unchanged (§2–§4).
+
+## 6b. Free-tier hashing (same pepper as OFAC)
+
+The `free_tier_usage.payer_wallet_hash` uses the **same** `WALLET_SALT` pepper and
+trim-only normalization as OFAC (`src/lib/crypto.ts` → `hashWalletAddress`, via
+`src/lib/freeTier/quota.ts` → `payerWalletHash`). The raw payer address never lands in the
+DB. Access is service-role-only through `security invoker` RPCs (`consume_free_tier`,
+`release_free_tier`, `purge_free_tier_usage`); RLS is on with no policies. See
+[`07`](./07-freemium-gate.md) §4.
 
 ## 7. Loading the OFAC list (operational note)
 
