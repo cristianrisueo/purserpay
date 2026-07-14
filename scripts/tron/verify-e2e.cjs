@@ -51,7 +51,8 @@ const RECIPIENTS = (process.env.VERIFY_RECIPIENTS || "")
   });
 
 // Keyless instance — no privateKey. Constant calls need a `from` address, not a key.
-const tw = new TronWeb({ fullHost: NET.fullHost });
+// Attaches TRON_PRO_API_KEY on mainnet (required — public TronGrid rate-limits keyless reads).
+const tw = new TronWeb({ fullHost: NET.fullHost, headers: L.apiKeyHeaders(NET) });
 
 async function constCall(contract, funcSig, params, from) {
   const res = await tw.transactionBuilder.triggerConstantContract(

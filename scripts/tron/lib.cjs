@@ -48,6 +48,28 @@ function resolveNetwork() {
   return net;
 }
 
+/**
+ * TronGrid API-key header for TronWeb. REQUIRED on mainnet: the public mainnet endpoint
+ * rate-limits keyless traffic, so a keyless deploy 429s MID-BROADCAST (the broadcast can
+ * land but the receipt read-back fails, leaving the address unreported). Optional on nile.
+ * Callers load dotenv (.env / .env.local) before requiring this module, so
+ * process.env.TRON_PRO_API_KEY is populated. Returns undefined (no header) on nile w/o a key.
+ */
+function apiKeyHeaders(net) {
+  const key = process.env.TRON_PRO_API_KEY;
+  if (!key || key.trim() === "") {
+    if (net.key === "mainnet") {
+      throw new Error(
+        "TRON_PRO_API_KEY is required on mainnet: public TronGrid rate-limits keyless " +
+          "traffic, so a keyless deploy/read 429s (a deploy can even 429 mid-broadcast). " +
+          "Set it in .env.local (server-only) before running."
+      );
+    }
+    return undefined;
+  }
+  return { "TRON-PRO-API-KEY": key.trim() };
+}
+
 // A keyless instance, purely for pure utility functions (keccak, account gen).
 // In tronweb v6 these live on the INSTANCE (`tw.utils.*`), not the static class.
 // Construction makes no network call, so a network-agnostic host is fine here — it
@@ -67,7 +89,11 @@ function getTronWeb() {
     );
   }
   const net = resolveNetwork();
-  const tronWeb = new TronWeb({ fullHost: net.fullHost, privateKey: pk.trim() });
+  const tronWeb = new TronWeb({
+    fullHost: net.fullHost,
+    privateKey: pk.trim(),
+    headers: apiKeyHeaders(net), // mainnet: required (avoids the mid-broadcast 429)
+  });
   return tronWeb;
 }
 
@@ -286,6 +312,7 @@ module.exports = {
   TronWeb,
   NETWORKS,
   resolveNetwork,
+  apiKeyHeaders,
   SUN,
   MAX_UINT256,
   getTronWeb,
