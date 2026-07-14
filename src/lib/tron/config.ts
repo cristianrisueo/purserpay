@@ -165,30 +165,30 @@ export const USDT_DECIMALS = 6
 export const BATCH_CAP = 100
 
 // --- feeLimit sizing --------------------------------------------------------
-// ⚠ NILE-MEASURED. The fresh-recipient figures below come from the Nile dress
-// rehearsal against the REAL Nile USDT (Tether USD) — NOT the old mock. Mainnet
-// USDT-TRC20 and mainnet energy prices differ, so these are NOT valid for a
-// mainnet payout as-is.
+// ✅ MAINNET-MEASURED (2026-07-14). Calibrated by CONSTANT-CALL SIMULATION
+// (triggerConstantContract — no signature, no spend) against the LIVE mainnet PurserPay
+// TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha with FRESH recipients (never held USDT).
+// See scripts/tron/measure-mainnet.cjs and docs/06 §6. LINEAR FIT residual 0.0% on N=2/3/5 —
+// the BASE + PER·N model holds exactly:
+//   ENERGY_PER_RECIPIENT_FRESH = 157,000  (marginal per fresh recipient)
+//   ENERGY_BASE                =   3,100  (per-tx overhead)
 //
-// TODO(mainnet-deploy-runbook, docs/06 "Calibrating energy on mainnet"): after the
-// mainnet contract is deployed, run ONE small real batch (2–3 recipients), read the
-// exact energy consumed from Tronscan, and re-tune ENERGY_BASE /
-// ENERGY_PER_RECIPIENT_FRESH / ENERGY_PRICE_SUN from that. feeLimit is a CEILING, not
-// a charge — the tx only burns what it uses, so an over-generous value is safe while
-// an under-generous one kills a real payroll with OUT_OF_ENERGY. (The old measure.cjs
-// script is broken/retired — empirical on-chain measurement supersedes it.)
+// ⚠ NILE'S MOCK/TESTNET USDT WAS NOT REPRESENTATIVE of mainnet Tether — a 3.9× MISS: the Nile
+// rehearsal read ~36,925/recipient, mainnet reads ~157,000. Never calibrate energy from testnet.
+// With the old Nile constant (40,000), the feeLimit budgeted for one fresh recipient (64,568
+// energy) was already well under the REAL single-recipient cost (159,946). The 50 TRX floor
+// masked it for the smallest batches (N≤3 survived), but a real payroll to 4+ FRESH (virgin)
+// wallets would have died OUT_OF_ENERGY (e.g. N=4 real 63 TRX > old feeLimit 50 TRX floor).
+// Fresh is the worst case AND the real case (a new affiliate's wallet is virgin); fresh/existing
+// ≈ 1.72× (fresh N=3 = 473,747 energy vs existing holders = 275,747), so we size against fresh.
 //
-// Sizing rationale (unchanged): a fresh (never-funded) recipient costs the most
-// energy; funded recipients ~half. We size feeLimit against the fresh worst case so a
-// batch never dies OUT_OF_ENERGY.
-// Derived from the Nile rehearsal (real Nile USDT), two data points:
-//   1 recipient  =  39,970 energy   (= BASE + 1×PER)
-//   3 recipients = 113,819 energy   (= BASE + 3×PER)
-//   ⇒ PER ≈ 36,925 · BASE ≈ 3,045
-// The constants below sit safely ABOVE the fit (and FEE_MARGIN adds 1.5× more headroom).
-export const ENERGY_BASE = 3_000 // per-tx overhead; rehearsal fit ~3,045
-export const ENERGY_PER_RECIPIENT_FRESH = 40_000 // fresh recipient; rehearsal fit ~36,925, above it
-export const ENERGY_PRICE_SUN = 100 // NILE energy price (sun per energy) — mainnet differs
+// feeLimit is a CEILING, not a charge — the tx burns only what it uses, so over-provisioning
+// costs nothing while under-provisioning kills a payroll. At BATCH_CAP=100, feeLimit ≈ 2,355 TRX
+// (well under the 15,000 TRX protocol max). Re-verify against a REAL receipt the first mainnet
+// batch: getAllowDynamicEnergy=1 on mainnet, so per-contract energy can rise with usage. docs/06 §6.
+export const ENERGY_BASE = 3_100 // MAINNET: per-tx overhead (measured 2026-07-14)
+export const ENERGY_PER_RECIPIENT_FRESH = 157_000 // MAINNET: fresh recipient (measured; Nile was 3.9× too low)
+export const ENERGY_PRICE_SUN = 100 // mainnet getEnergyFee (sun/energy) at calibration — a governance param; re-check
 export const FEE_MARGIN = 1.5 // headroom over the fresh estimate
 export const FEE_FLOOR_SUN = 50_000_000 // 50 TRX floor for tiny batches
 export const SUN_PER_TRX = 1_000_000

@@ -287,8 +287,20 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
    `FEE_MARGIN` in energy AND TRX (× the live `getEnergyFee`). Apply the constants **rounded UP** —
    `feeLimit` is a **ceiling, never a charge**; over-provisioning costs nothing, under-provisioning
    kills a payroll, so **when in doubt go high**. Keep the 1.5× margin; relabel the constants
-   MAINNET-measured. (For reference, the Nile rehearsal against real Nile USDT measured ~36,925
-   energy/recipient, ~3,045 base — mainnet USDT is the same Tether logic, so expect a similar figure.)
+   MAINNET-measured.
+
+   **Result (measured 2026-07-14 against `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`, fresh recipients,
+   linear-fit residual 0.0% on N=2/3/5):**
+   `ENERGY_PER_RECIPIENT_FRESH = 157,000`, `ENERGY_BASE = 3,100`. `feeLimit(100)` ≈ **2,355 TRX**
+   (under the 15,000 TRX max). **fresh/existing ≈ 1.72×** (fresh N=3 = 473,747 energy vs existing
+   holders = 275,747) — fresh is the worst case AND the real case, so we size against it.
+
+   > **⚠ NILE'S USDT WAS NOT REPRESENTATIVE OF MAINNET TETHER — a 3.9× MISS.** The Nile mock/rehearsal
+   > read ~36,925 energy/recipient; mainnet reads **157,000**. The old Nile constant (40,000) left the
+   > feeLimit under-provisioned — a real payroll to **4+ fresh (virgin) wallets** would have died
+   > `OUT_OF_ENERGY` (the 50 TRX floor only covered N≤3). **Never calibrate mainnet energy from a
+   > testnet.** This is exactly why the calibration is a constant-call simulation against the LIVE
+   > mainnet contract, not a testnet extrapolation.
 
    **Caveats (the script prints them; do not bury):** (1) a constant call is a SIMULATION, not a
    receipt — the best estimate without spending, but not a broadcast tx; (2) `getAllowDynamicEnergy
@@ -301,6 +313,15 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
    > 2,000, max 34,000): a heavily-used contract can be charged progressively more. Irrelevant today
    > (brand-new contract, far below the threshold), but if a future batch dies `OUT_OF_ENERGY`
    > despite the margin, this is the first thing to check — not a mystery.
+
+   > **OPEN QUESTION (customer discovery — do NOT build yet).** At `BATCH_CAP = 100` **fresh**
+   > recipients the REAL gas is ~15.7M energy ≈ **1,570 TRX ≈ $510 per payroll run** (at 100
+   > sun/energy). That is **TRON's cost, not ours** — the customer pays it on-chain today, from
+   > their own wallet, regardless. But $510/run for a 100-new-affiliate batch is a real objection
+   > and a real product question: energy rental / staking to slash it? batch-size guidance in the
+   > UI? surfacing the cost before signing? Existing recipients cost ~1.72× less, and most real
+   > rosters are mostly-returning, so the typical run is far cheaper — but new-affiliate onboarding
+   > is exactly the expensive case. Take this to customer conversations; build nothing off it yet.
 5. **`TRON_PRO_API_KEY` — REQUIRED on mainnet.** Without it, TronGrid rate-limits the gate's
    server-side reads (`serverRead.ts`), `readSubscriptionActive()` returns null, and the gate
    fails **closed** — a paying customer sees the paywall on their payday. `serverRead.ts` therefore
