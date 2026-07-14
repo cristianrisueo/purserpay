@@ -128,6 +128,7 @@ export function PricingSection() {
       // 1) On-chain subscribe FIRST for the chosen plan, from the user's own wallet. If
       //    this throws (rejected / no gas / revert) nothing is stored — no orphan PII.
       const { txid } = await runSubscribe(address, chosenPlan, {
+        onApproveReset: () => setPhase("resetting"),
         onApproveStart: () => setPhase("approving"),
         onSigning: () => setPhase("signing"),
         onConfirming: () => setPhase("confirming"),

@@ -94,6 +94,7 @@ contract PurserPayTest is Test {
     );
     event SubscriptionFeesUpdated(uint256 newMonthly, uint256 newAnnual);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+    event TreasuryWalletUpdated(address indexed previousTreasury, address indexed newTreasury);
 
     function setUp() public {
         treasury = makeAddr("treasury");
@@ -356,6 +357,73 @@ contract PurserPayTest is Test {
         purser.transferOwnership(address(0));
 
         assertEq(purser.owner(), address(this), "owner unchanged");
+    }
+
+    // -------------------------------------------------------------------------
+    // updateTreasuryWallet — owner redirects OUR OWN revenue (never user funds)
+    // -------------------------------------------------------------------------
+
+    /// @dev The owner redirects the treasury; the event fires; the getter updates; and a
+    ///      subsequent subscribe pays the NEW treasury (proving it's a live storage read).
+    function test_UpdateTreasuryWallet_OwnerUpdates_SubscribePaysNewTreasury() public {
+        address newTreasury = makeAddr("newTreasury");
+
+        vm.expectEmit(true, true, false, false, address(purser));
+        emit TreasuryWalletUpdated(treasury, newTreasury);
+
+        // The test contract is the owner (it deployed purser in setUp).
+        purser.updateTreasuryWallet(newTreasury);
+        assertEq(purser.treasuryWallet(), newTreasury, "treasury redirected");
+
+        // subscribe(0) now forwards to the NEW treasury; the OLD one receives nothing.
+        usdt.mint(subscriber, PRICE);
+        vm.startPrank(subscriber);
+        usdt.approve(address(purser), PRICE);
+        purser.subscribe(0);
+        vm.stopPrank();
+
+        assertEq(usdt.balanceOf(newTreasury), PRICE, "new treasury funded");
+        assertEq(usdt.balanceOf(treasury), 0, "old treasury receives nothing");
+        assertEq(usdt.balanceOf(address(purser)), 0, "contract holds nothing");
+    }
+
+    /// @dev Any non-owner call reverts NotOwner and changes nothing.
+    function test_UpdateTreasuryWallet_NonOwnerReverts() public {
+        vm.prank(subscriber);
+        vm.expectRevert(PurserPay.NotOwner.selector);
+        purser.updateTreasuryWallet(subscriber);
+
+        assertEq(purser.treasuryWallet(), treasury, "treasury unchanged");
+    }
+
+    /// @dev The treasury can never be redirected to the zero address (no accidental burn).
+    function test_UpdateTreasuryWallet_ZeroAddressReverts() public {
+        vm.expectRevert(PurserPay.ZeroAddressConfig.selector);
+        purser.updateTreasuryWallet(address(0));
+
+        assertEq(purser.treasuryWallet(), treasury, "treasury unchanged");
+    }
+
+    /// @dev Redirecting the treasury does NOT touch the disperse path: a disperse after the
+    ///      update pays recipients directly and the contract still holds nothing. The treasury
+    ///      is never in the disperse code path, so it cannot be affected either way.
+    function test_UpdateTreasuryWallet_DisperseUnaffected() public {
+        purser.updateTreasuryWallet(makeAddr("newTreasury"));
+
+        address r1 = makeAddr("d1");
+        address[] memory recipients = new address[](1);
+        recipients[0] = r1;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 42 * 10 ** 6;
+
+        usdt.mint(payer, 42 * 10 ** 6);
+        vm.startPrank(payer);
+        usdt.approve(address(purser), 42 * 10 ** 6);
+        purser.disperse(address(usdt), recipients, amounts);
+        vm.stopPrank();
+
+        assertEq(usdt.balanceOf(r1), 42 * 10 ** 6, "recipient paid directly");
+        assertEq(usdt.balanceOf(address(purser)), 0, "contract still holds nothing");
     }
 
     // -------------------------------------------------------------------------

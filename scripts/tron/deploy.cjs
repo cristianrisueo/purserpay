@@ -1,24 +1,32 @@
-// deploy.cjs — deploy the unified PurserPay contract to the TRON Nile testnet.
+// deploy.cjs — deploy the unified PurserPay contract to a TRON network (env-driven).
 //
 // We deploy the EXACT bytecode Foundry already produced and tested: the artifact
 // at contracts/out/PurserPay.sol/PurserPay.json, compiled solc 0.8.20 /
-// optimizer-200 / evmVersion=istanbul (no PUSH0 — TVM-safe) — the same bytecode
-// that passed `forge test` 20/20. No re-compile here; forge is the source of truth
-// for the bytecode. (The legacy solc-js compile.cjs targets the old, now-deleted
-// PurseDisperseUsdt/MockUsdtTrc20 sources and is not used.)
+// optimizer-200 / evmVersion=istanbul (no PUSH0 — TVM-safe). No re-compile here;
+// forge is the source of truth for the bytecode. (The legacy solc-js compile.cjs
+// targets the old, now-deleted PurseDisperseUsdt/MockUsdtTrc20 sources and is dead.)
 //
-// PurserPay's constructor takes two immutable args — (address _usdt, address
-// _treasuryWallet) — set once, forever. They are passed as tronweb {type,value}
-// parameters through lib.deploy().
+// PurserPay's constructor takes (address _usdt, address _treasuryWallet). `_usdt` is
+// immutable (forever). `_treasuryWallet` is the INITIAL treasury — now owner-updatable
+// storage (updateTreasuryWallet), not an immutable, so it can move to cold/multisig
+// later WITHOUT a redeploy. Both are passed as tronweb {type,value} params via lib.deploy().
 //
-// Safety: the private key is read from process.env.PRIVATE_KEY (loaded from a
-// gitignored .env by dotenv). It is NEVER printed, logged, or written. A bare run
-// prints a PREFLIGHT PLAN and broadcasts NOTHING; the deploy only fires when
-// re-run with CONFIRM_DEPLOY=1, after the owner has approved the printed plan.
+// EVERYTHING network-specific is env-driven with NO defaults (fail closed):
+//   DEPLOY_NETWORK    "nile" | "mainnet"     (picks fullHost + explorer)
+//   USDT_ADDRESS      constructor _usdt      (MUST equal the frontend's USDT_ADDRESS)
+//   TREASURY_WALLET   constructor _treasuryWallet (initial treasury)
+//   EXPECTED_DEPLOYER the signer must equal this, or abort
+//   MIN_TRX_FLOOR     abort if signer liquid TRX is below this (default 100)
+// A missing required var aborts before anything is built or broadcast.
+//
+// Safety: PRIVATE_KEY is read from a gitignored .env (dotenv). It is NEVER printed,
+// logged, or written. A bare run prints a PREFLIGHT PLAN and broadcasts NOTHING; the
+// deploy only fires when re-run with CONFIRM_DEPLOY=1, after the owner approves the plan.
 //
 // Usage:
-//   node scripts/tron/deploy.cjs                 # dry preflight (no broadcast)
-//   CONFIRM_DEPLOY=1 node scripts/tron/deploy.cjs # broadcast the deploy
+//   DEPLOY_NETWORK=nile USDT_ADDRESS=… TREASURY_WALLET=… EXPECTED_DEPLOYER=… \
+//     node scripts/tron/deploy.cjs                  # dry preflight (no broadcast)
+//   … CONFIRM_DEPLOY=1 node scripts/tron/deploy.cjs # broadcast the deploy
 
 const fs = require("fs");
 const path = require("path");
@@ -31,14 +39,29 @@ require("dotenv").config({ path: path.join(ROOT, ".env.local") });
 
 const L = require("./lib.cjs");
 
-// --- deploy configuration (owner-locked) -----------------------------------
-// Both constructor args are immutable in the contract — chosen once, forever.
-const USDT_ADDRESS = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"; // Nile USDT (Tether USD, 6dp) — corrected token
-const TREASURY_WALLET = "TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2"; // Wallet 1 (deployer)
-const EXPECTED_DEPLOYER = "TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2"; // Wallet 1 must be the signer
+// --- deploy configuration (env-driven — NO defaults, fail closed) ----------
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v || String(v).trim() === "") {
+    throw new Error(
+      `${name} is required (no default). Set it in the environment before deploying — ` +
+        `see the header comment for the full var list. Aborting; nothing was built.`
+    );
+  }
+  return String(v).trim();
+}
+
+const NET = L.resolveNetwork(); // validates DEPLOY_NETWORK (throws on missing/unknown)
+const USDT_ADDRESS = requireEnv("USDT_ADDRESS"); // constructor _usdt (immutable, forever)
+const TREASURY_WALLET = requireEnv("TREASURY_WALLET"); // constructor _treasuryWallet (initial; owner-updatable)
+const EXPECTED_DEPLOYER = requireEnv("EXPECTED_DEPLOYER"); // signer must equal this
+// Abort if the signer's liquid TRX is below this floor. A failed deploy burns the TRX
+// it consumed AND yields no contract, so we refuse to start under-funded. Default 100
+// TRX (the old Nile deploy of the SMALLER contract burned 56.85 TRX; this one is larger).
+const MIN_TRX_FLOOR = Number(process.env.MIN_TRX_FLOOR || "100");
 
 const ARTIFACT = path.join(ROOT, "contracts/out/PurserPay.sol/PurserPay.json");
-const DEPLOY_FEE = 1_500 * L.SUN; // 1,500 TRX ceiling; actual burn ~150–300 TRX (userFeePercentage 100)
+const DEPLOY_FEE = 1_500 * L.SUN; // 1,500 TRX ceiling; actual burn far lower (userFeePercentage 100)
 
 function loadArtifact() {
   if (!fs.existsSync(ARTIFACT)) {
@@ -74,9 +97,9 @@ async function main() {
   const balTrx = L.sunToTrx(balSun);
 
   console.log("──────────────────────────────────────────────────────────────");
-  console.log("PurserPay → TRON Nile testnet — deploy preflight");
+  console.log(`PurserPay → TRON ${NET.key} — deploy preflight`);
   console.log("──────────────────────────────────────────────────────────────");
-  console.log(`  network:        nile (${L.FULL_HOST})`);
+  console.log(`  network:        ${NET.key} (${NET.fullHost})`);
   console.log(`  artifact:       contracts/out/PurserPay.sol/PurserPay.json`);
   console.log(`  bytecode:       ${bytes} bytes (istanbul / optimizer-200 / solc 0.8.20)`);
   console.log(`  deployer:       ${deployer}`);
@@ -84,18 +107,43 @@ async function main() {
   console.log(`  constructor _usdt:           ${USDT_ADDRESS}`);
   console.log(`  constructor _treasuryWallet: ${TREASURY_WALLET}`);
   console.log(`  feeLimit ceiling:            ${L.sunToTrx(DEPLOY_FEE)} TRX (userFeePercentage 100)`);
+  console.log(`  min TRX floor:               ${MIN_TRX_FLOOR} TRX`);
+  console.log(
+    `  est. cost reference:         ~56.85 TRX (Nile, the SMALLER pre-treasury-update ` +
+      `contract) — expect MORE here (this bytecode is larger)`
+  );
   console.log("──────────────────────────────────────────────────────────────");
 
   if (deployer !== EXPECTED_DEPLOYER) {
     throw new Error(
-      `Signer mismatch: PRIVATE_KEY resolves to ${deployer}, expected ${EXPECTED_DEPLOYER} ` +
-        `(Wallet 1). Aborting — nothing was broadcast.`
+      `Signer mismatch: PRIVATE_KEY resolves to ${deployer}, expected ${EXPECTED_DEPLOYER}. ` +
+        `Aborting — nothing was broadcast.`
     );
   }
-  if (balTrx < 400) {
-    console.warn(
-      `  ⚠ deployer balance is ${balTrx} TRX — a deploy can burn ~150–300 TRX. ` +
-        `Top up via the Nile faucet (nileex.io) if this is too low.`
+
+  // LOUD WARNING (not an abort): on mainnet, deploying with the treasury == the hot
+  // deployer key is a CONSCIOUS, ACCEPTED launch decision — updateTreasuryWallet exists
+  // precisely so the treasury can move to cold/multisig later without a redeploy. Printed
+  // BEFORE the balance gate so the operator always reads it.
+  if (NET.key === "mainnet" && TREASURY_WALLET === EXPECTED_DEPLOYER) {
+    console.warn("");
+    console.warn("  ⚠⚠⚠ ────────────────────────────────────────────────────────────");
+    console.warn("  ⚠⚠⚠  MAINNET: TREASURY_WALLET == EXPECTED_DEPLOYER (the HOT key).");
+    console.warn("  ⚠⚠⚠  Your revenue treasury is the same hot key you are deploying with.");
+    console.warn("  ⚠⚠⚠  This is acceptable ONLY as a conscious launch decision. Move it to");
+    console.warn("  ⚠⚠⚠  a cold/multisig wallet via updateTreasuryWallet once there is traction");
+    console.warn("  ⚠⚠⚠  (no redeploy needed — that is exactly why treasury is now updatable).");
+    console.warn("  ⚠⚠⚠ ────────────────────────────────────────────────────────────");
+    console.warn("");
+  }
+
+  // Balance floor: ABORT (not just warn) below the floor. Running out mid-deploy burns
+  // the consumed TRX AND yields no contract — the worst outcome.
+  if (balTrx < MIN_TRX_FLOOR) {
+    throw new Error(
+      `Deployer balance ${balTrx} TRX is below the ${MIN_TRX_FLOOR} TRX floor (MIN_TRX_FLOOR). ` +
+        `A failed deploy burns the TRX it consumed and produces no contract. Top up first, ` +
+        `then re-run. Aborting — nothing was broadcast.`
     );
   }
 
@@ -126,8 +174,10 @@ async function main() {
   console.log(`  tx:       ${L.trxLink(txid)}`);
   console.log(`  contract: ${L.addrLink(address)}`);
 
-  // --- sanity: read back the immutables -------------------------------------
-  console.log("\nVerifying immutables on-chain…");
+  // --- sanity: read back the on-chain configuration -------------------------
+  // usdt() is immutable; treasuryWallet() is now owner-updatable storage — both are
+  // still read back to confirm the constructor set them as intended.
+  console.log("\nVerifying on-chain configuration…");
   const usdtHex = await L.constCall(tronWeb, address, "usdt()", []);
   const treasuryHex = await L.constCall(tronWeb, address, "treasuryWallet()", []);
   const ownerHex = await L.constCall(tronWeb, address, "owner()", []);
@@ -147,7 +197,10 @@ async function main() {
   console.log(`  SUBSCRIPTION_PRICE():        ${priceMonthly.toString()} ${priceMonthly === 150_000_000n ? "✓ (150e6)" : "✗"}`);
   console.log(`  SUBSCRIPTION_PRICE_ANNUAL(): ${priceAnnual.toString()} ${priceAnnual === 1_500_000_000n ? "✓ (1500e6)" : "✗"}`);
 
-  console.log("\nNext: set PURSERPAY_ADDRESS and DISPERSE_ADDRESS in src/lib/tron/config.ts to:");
+  console.log(
+    `\nNext: set the ${NET.key === "mainnet" ? "MAINNET" : "NILE"}.purserPay address in ` +
+      `src/lib/tron/config.ts to:`
+  );
   console.log(`  ${address}`);
 }
 

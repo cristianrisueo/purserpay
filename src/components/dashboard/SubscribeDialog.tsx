@@ -62,6 +62,10 @@ function submitContent(
   switch (phase) {
     case "storing":
       return { text: "Saving your details…", spinning: true }
+    case "resetting":
+      // Mainnet USDT needs a standing approval cleared to 0 first — a distinct,
+      // extra signature. Name it so the second prompt isn't a surprise (Law #2).
+      return { text: "Clearing previous approval…", spinning: true }
     case "approving":
     case "signing":
     case "confirming":
@@ -232,6 +236,10 @@ export function SubscribeDialog({
                 <li key={err}>{err}</li>
               ))}
             </ul>
+          ) : phase === "resetting" ? (
+            <p className="text-[12.5px] text-muted-foreground">
+              Clearing your previous approval first — one extra signature.
+            </p>
           ) : busy ? (
             <p className="text-[12.5px] text-muted-foreground">
               Keep this window open until it confirms.

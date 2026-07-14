@@ -19,54 +19,98 @@ export type TronNetwork = {
   explorer: string
 }
 
-// --- Active network: Nile testnet -------------------------------------------
-// Deployed + measured in the 3B-measure sprint. Swap this block (and the two
-// addresses below) for mainnet when the time comes; nothing else changes.
-export const NETWORK: TronNetwork = {
-  key: "nile",
-  name: "Nile testnet",
-  fullHost: "https://nile.trongrid.io",
-  hostMatch: "nile",
-  explorer: "https://nile.tronscan.org",
-}
-
-// Mainnet, for reference — do NOT enable until V1 ships and the real USDT
-// address + a mainnet-deployed disperse are wired and re-measured:
-//   name: "TRON mainnet", fullHost: "https://api.trongrid.io",
-//   hostMatch: "api.trongrid", explorer: "https://tronscan.org"
-//   USDT_ADDRESS (real): TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t
-
-/** Our disperse contract (Nile). Now the unified PurserPay contract (disperse +
- *  subscribe) — its disperse/Dispersed/error selectors are byte-for-byte preserved
- *  from the prior PurseDisperseUsdt, so the money path is untouched. The disperse path
- *  is permissionless and immutable; the contract has an owner ONLY over subscription
- *  fees. Same address as PURSERPAY_ADDRESS: one contract serves both.
- *  (Superseded deploys: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 — wrong token;
- *  TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x — disperse-only;
- *  THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c — old price 250/2,500;
- *  TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY — immutable-fee version, before owner-adjustable fees.) */
-export const DISPERSE_ADDRESS: string = "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG"
-
 /** Sentinel for the pre-deployment state. `isPurserPayDeployed()` compares
  *  against this — while PURSERPAY_ADDRESS equals it, the subscription gate is
  *  fail-closed (paywall shows; an on-chain subscribe surfaces a calm "not
- *  deployed yet"). PurserPay is now deployed, so this is retained only as the
- *  comparison target. It is not a valid TRON address on purpose. */
+ *  deployed yet"). It can never silently open. It is not a valid TRON address on
+ *  purpose. Nile is deployed (so its block below carries a real address); mainnet
+ *  is NOT yet, so the mainnet block points here until the deploy runbook lands. */
 export const PENDING_DEPLOYMENT_ADDRESS: string = "T_PENDING_DEPLOYMENT_ADDRESS"
 
-/** The deployed PurserPay contract (Nile) that carries the on-chain subscription
- *  (subscribe / isSubscriptionActive) AND disperse. One unified contract serves both —
- *  DISPERSE_ADDRESS points at the same address. The disperse path is permissionless and
- *  immutable; the owner (the deployer) can adjust ONLY the subscription fees via
- *  updateSubscriptionFees — never funds, keys, broadcast, pause, or disperse.
- *  Constructor immutables: usdt = TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile USDT,
- *  Tether USD, 6dp), treasuryWallet = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2.
- *  owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer). Fees at deploy: 150 / 1,500.
- *  Deploy tx: 2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d.
- *  (Superseded: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 pointed at the wrong token;
- *  THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c carried the old 250/2,500 price;
- *  TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY had immutable fees, no owner-adjustable fees.) */
-export const PURSERPAY_ADDRESS: string = "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG"
+/** A full per-network configuration. Exactly one is selected at BUILD time by
+ *  NEXT_PUBLIC_TRON_NETWORK — network + contract + USDT move together, so a build
+ *  can never mix (e.g.) mainnet USDT with the Nile contract. */
+type NetworkConfig = {
+  network: TronNetwork
+  /** The unified PurserPay contract (disperse + subscribe). PENDING_DEPLOYMENT_ADDRESS
+   *  until a real deploy lands, which keeps the subscription gate fail-closed. */
+  purserPay: string
+  /** USDT-TRC20 token the contract pulls from — MUST equal the deployed PurserPay's
+   *  `usdt` immutable, or every approve/subscribe/disperse reverts. */
+  usdt: string
+}
+
+// --- Nile testnet (deployed) ------------------------------------------------
+// The unified PurserPay contract (disperse + subscribe); its disperse/Dispersed/error
+// selectors are byte-for-byte preserved from the prior PurseDisperseUsdt, so the money
+// path is untouched. disperse is permissionless + immutable; the owner controls ONLY the
+// subscription fees + the treasury destination — never funds, keys, broadcast, or disperse.
+// Constructor: usdt = TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile USDT, Tether USD, 6dp),
+// treasuryWallet = owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer). Fees at deploy:
+// 150 / 1,500. Deploy tx: 2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d.
+// (Superseded deploys — do not reuse: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 wrong token;
+// TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x disperse-only; THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c old
+// price 250/2,500; TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY immutable fees.)
+const NILE: NetworkConfig = {
+  network: {
+    key: "nile",
+    name: "Nile testnet",
+    fullHost: "https://nile.trongrid.io",
+    hostMatch: "nile",
+    explorer: "https://nile.tronscan.org",
+  },
+  purserPay: "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG",
+  usdt: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
+}
+
+// --- TRON mainnet (NOT yet deployed) ----------------------------------------
+// purserPay stays the fail-closed sentinel until the mainnet deploy runbook sets the
+// real address. usdt is Tether's REAL USDT-TRC20 — verified character-by-character
+// against Tronscan; it MUST equal the deployed contract's `usdt` immutable.
+const MAINNET: NetworkConfig = {
+  network: {
+    key: "mainnet",
+    name: "TRON mainnet",
+    fullHost: "https://api.trongrid.io",
+    hostMatch: "api.trongrid",
+    explorer: "https://tronscan.org",
+  },
+  purserPay: PENDING_DEPLOYMENT_ADDRESS,
+  usdt: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+}
+
+const CONFIGS: Record<string, NetworkConfig> = { nile: NILE, mainnet: MAINNET }
+
+// THE network seam. ONE build-time env var selects the WHOLE block (network + both
+// addresses + USDT). It is read here, once — client code AND serverRead.ts import these
+// same resolved constants, so the client and server can never target different networks.
+// Fail closed: a missing or unrecognized value THROWS at module load — never a silent
+// default, never a guessed network. There is deliberately NO runtime toggle (a client
+// switch would desync from the server, and Supabase is one project keyed on wallet_hash
+// with no network dimension, so sandbox traffic would write into the production DB) —
+// network isolation comes from a SEPARATE deployment. See docs/06.
+const NETWORK_KEY = process.env.NEXT_PUBLIC_TRON_NETWORK
+const SELECTED: NetworkConfig | undefined = NETWORK_KEY
+  ? CONFIGS[NETWORK_KEY]
+  : undefined
+if (!SELECTED) {
+  throw new Error(
+    `NEXT_PUBLIC_TRON_NETWORK must be one of: ${Object.keys(CONFIGS).join(" | ")} — ` +
+      `got ${JSON.stringify(NETWORK_KEY)}. Set it in .env.local (build-time only; ` +
+      `there is no runtime network toggle).`
+  )
+}
+
+/** The active network. Resolved from NEXT_PUBLIC_TRON_NETWORK at build time. */
+export const NETWORK: TronNetwork = SELECTED.network
+
+/** The deployed PurserPay contract (disperse + subscribe / isSubscriptionActive). One
+ *  unified contract serves both; DISPERSE_ADDRESS points at the same address. Equals
+ *  PENDING_DEPLOYMENT_ADDRESS on mainnet until the deploy runbook lands (gate fail-closed). */
+export const PURSERPAY_ADDRESS: string = SELECTED.purserPay
+
+/** Alias of PURSERPAY_ADDRESS — the same contract carries the money path. */
+export const DISPERSE_ADDRESS: string = SELECTED.purserPay
 
 /** Subscription plan selector — matches the contract's `subscribe(uint8 planType)`.
  *  0 = monthly (150 / 30d), 1 = annual (1,500 / 365d). */
@@ -92,10 +136,10 @@ export function priceUnitsForPlan(plan: SubscriptionPlan): bigint {
 
 /** The USDT token the contract pulls from — MUST equal the deployed PurserPay's
  *  `usdt` immutable, or on-chain approvals land on the wrong token and every
- *  subscribe/disperse reverts. On Nile this is Tether USD (symbol USDT, 6 decimals)
- *  at TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf. (Was the MockUsdtTrc20 TSYr… before the
- *  corrected-token redeploy.) Mainnet swaps this for Tether's mainnet contract. */
-export const USDT_ADDRESS = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf"
+ *  subscribe/disperse reverts. Resolved from the selected network block: Nile USDT
+ *  (Tether USD, 6dp) at TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf, or the real mainnet
+ *  Tether USDT-TRC20 at TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t. */
+export const USDT_ADDRESS = SELECTED.usdt
 
 /** USDT-TRC20 has 6 decimals. The contract does zero decimal math — the
  *  frontend converts human amounts to base units before dispersing. */
@@ -109,13 +153,24 @@ export const USDT_DECIMALS = 6
 export const BATCH_CAP = 100
 
 // --- feeLimit sizing --------------------------------------------------------
-// From the Nile measurement: a fresh (never-funded) recipient costs the most
-// energy; funded recipients ~half. We size feeLimit against the fresh worst
-// case so a batch never dies OUT_OF_ENERGY. feeLimit is a ceiling, not a
-// charge — the tx only burns what it actually uses.
-export const ENERGY_BASE = 3_000 // per-tx overhead (measured ~2,919)
-export const ENERGY_PER_RECIPIENT_FRESH = 30_300 // measured ~30,255, rounded up
-export const ENERGY_PRICE_SUN = 100 // Nile energy price (sun per energy)
+// ⚠ NILE-MEASURED. Every constant below was measured against the Nile testnet
+// (mock USDT) in the 3B-measure sprint. Mainnet USDT-TRC20 and mainnet energy
+// prices differ, so these are NOT valid for a mainnet payout as-is.
+//
+// TODO(mainnet-deploy-runbook, docs/06 "Calibrating energy on mainnet"): after the
+// mainnet contract is deployed, run ONE small real batch (2–3 recipients), read the
+// exact energy consumed from Tronscan, and re-tune ENERGY_BASE /
+// ENERGY_PER_RECIPIENT_FRESH / ENERGY_PRICE_SUN from that. feeLimit is a CEILING, not
+// a charge — the tx only burns what it uses, so an over-generous value is safe while
+// an under-generous one kills a real payroll with OUT_OF_ENERGY. (The old measure.cjs
+// script is broken/retired — empirical on-chain measurement supersedes it.)
+//
+// Sizing rationale (unchanged): a fresh (never-funded) recipient costs the most
+// energy; funded recipients ~half. We size feeLimit against the fresh worst case so a
+// batch never dies OUT_OF_ENERGY.
+export const ENERGY_BASE = 3_000 // NILE: per-tx overhead (measured ~2,919)
+export const ENERGY_PER_RECIPIENT_FRESH = 30_300 // NILE: measured ~30,255, rounded up
+export const ENERGY_PRICE_SUN = 100 // NILE energy price (sun per energy) — mainnet differs
 export const FEE_MARGIN = 1.5 // headroom over the fresh estimate
 export const FEE_FLOOR_SUN = 50_000_000 // 50 TRX floor for tiny batches
 export const SUN_PER_TRX = 1_000_000

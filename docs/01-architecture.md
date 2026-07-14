@@ -59,7 +59,7 @@ flowchart TD
         TronLink["window.tronWeb<br/>(injected signer)"]
     end
 
-    subgraph Chain["TRON (Nile today)"]
+    subgraph Chain["TRON (build-time: mainnet | nile)"]
         Contract["PurserPay.sol<br/>disperse + subscribe"]
         USDT["USDT-TRC20"]
     end
@@ -171,14 +171,20 @@ look" index:
 
 ## 5. The network seam (`src/lib/tron/config.ts`)
 
-Everything chain-specific lives in **one file**, so switching networks is a config change,
-not a code change. It exports:
+Everything chain-specific lives in **one file**, selected at **build time** by
+`NEXT_PUBLIC_TRON_NETWORK` (`mainnet | nile`) — switching networks is an env change, not a code
+change, and there is **no runtime toggle** (see [`06`](./06-deployment.md) §4 for the rejected
+design). `config.ts` holds both a `NILE` and a `MAINNET` block and exports the selected one;
+`serverRead.ts` imports the same resolved constants, so client and server can never diverge. A
+missing/unrecognized value **throws at module load** (fail closed). It exports:
 
-- `NETWORK` — `{ key, name, fullHost, hostMatch, explorer }`. Currently **Nile testnet**.
-- `PURSERPAY_ADDRESS` / `DISPERSE_ADDRESS` — the **same** deployed contract serves both.
+- `NETWORK` — `{ key, name, fullHost, hostMatch, explorer }` for the selected network.
+- `PURSERPAY_ADDRESS` / `DISPERSE_ADDRESS` — the **same** deployed contract serves both
+  (`PENDING_DEPLOYMENT_ADDRESS` on mainnet until its deploy lands → gate fail-closed).
 - `USDT_ADDRESS`, `USDT_DECIMALS` (6) — must equal the contract's `usdt` immutable.
 - `SUBSCRIPTION_PRICE_*` / `_ANNUAL_*` — mirror the contract's fee state (150 / 1,500).
-- `BATCH_CAP` (100) and `feeLimitForBatch()` — the signing-boundary + energy sizing.
+- `BATCH_CAP` (100) and `feeLimitForBatch()` — the signing-boundary + energy sizing
+  (**Nile-measured**; re-calibrated empirically on mainnet — see [`06`](./06-deployment.md) §6).
 - `PENDING_DEPLOYMENT_ADDRESS` — sentinel for the fail-closed pre-deploy state.
 
 The concrete addresses and the mainnet-switch checklist are in

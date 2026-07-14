@@ -51,10 +51,15 @@ Rules for using it:
 - The app builds an unsigned batch; the client's own wallet signs and sends it.
 - This is the legal moat (arm's-length, no money-transmitter license) AND the sales
   pitch. Any code, copy, or feature that breaks this is wrong by definition.
-- The PurserPay contract has ONE owner-privileged action — adjusting the two
-  subscription-fee amounts (`updateSubscriptionFees`). This is a pricing lever, not
-  custody: the owner can never touch funds, keys, broadcast, pause anything, or alter
-  the permissionless `disperse` path. Non-custodial is untouched by it.
+- The PurserPay contract's owner surface is **monetization only, never custody**: adjusting
+  the two subscription-fee amounts (`updateSubscriptionFees`) and redirecting the treasury
+  that receives **our own** subscription fee (`updateTreasuryWallet` — so revenue can move to
+  cold/multisig without a redeploy that would wipe every subscriber's on-chain expiry), plus
+  `transferOwnership`. `treasuryWallet` only ever *receives* our fee — `disperse()` never
+  references it — so redirecting it can never touch user funds. The owner can never touch
+  funds, keys, broadcast, pause anything, or alter the permissionless `disperse` path.
+  Non-custodial is untouched by it. (`usdt` stays immutable — changing the token would break
+  every standing approval.)
 
 This is Tier 1 and it is absolute — the server-side architecture below changes
 nothing about it. Purser gains a backend to hide API keys, screen for OFAC, and gate
@@ -112,7 +117,8 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
   (1,500 USDT / 365 days) — and both are signed from the landing Pricing section **and** the
   dashboard subscribe modal, which now carries a plan selector (opening on **monthly** by
   default, since the payment is on-chain and irreversible; the landing opens it on the card
-  the user picked). Only the two fee amounts are owner-adjustable. Landing and dashboard stay
+  the user picked). Only the two fee amounts and the treasury destination are owner-adjustable
+  (`updateSubscriptionFees` / `updateTreasuryWallet`). Landing and dashboard stay
   100% separated; **design tokens are unchanged**.
 - **UI:** shadcn/ui + Tailwind + Radix. Components copied into the repo (we own them).
 - **Table (the core of the app):** TanStack Table via shadcn data-table.
@@ -127,8 +133,10 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
   and signing. (No Ledger/WebUSB in V1.)
 - **Payout contract:** our own minimal disperse contract on TRON — the `disperse` path is
   **permissionless and immutable** (no owner gate, no fee, holds nothing). The unified
-  PurserPay contract adds a single owner-only lever over the **subscription fees**
-  (`updateSubscriptionFees`); that lever never touches funds, keys, broadcast, or disperse.
+  PurserPay contract adds owner-only levers over the **subscription fees**
+  (`updateSubscriptionFees`) and the **treasury destination** (`updateTreasuryWallet`, so our
+  own revenue can move to cold/multisig without a redeploy); neither lever ever touches funds,
+  keys, broadcast, or disperse, and `treasuryWallet` only ever receives our own fee.
 - **Billing / gate:** an **on-chain subscription smart contract** — 150 USDT/mo or
   1,500 USDT/yr (2 months free), paid on-chain, **owner-adjustable** (not a redeploy, not a
   proxy). **No Stripe, no card, no fiat.** The gate (a Vercel route handler,
@@ -248,12 +256,26 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
 ## STANDING FACTS (never contradict in code or copy)
 
 - Chain: **TRON only**, token **USDT (TRC20)**. Multichain does NOT exist yet — don't
-  build for or promise Base/Arbitrum/etc.
+  build for or promise Base/Arbitrum/etc. The network (`mainnet | nile`) is selected at
+  **build time** by `NEXT_PUBLIC_TRON_NETWORK` — `config.ts` holds both blocks and **throws**
+  if the var is missing/unrecognized (fail closed). There is **no runtime network toggle** (it
+  would desync the client from `serverRead.ts` and let sandbox traffic write into the one
+  production Supabase project); network isolation comes from a **separate deployment**
+  (prod=mainnet / sandbox=nile, separate Vercel envs + separate Supabase projects). Non-mainnet
+  builds show a persistent SANDBOX banner. Nile is deployed; mainnet is pending (its block is
+  the fail-closed sentinel).
 - Wallets in V1: **TronLink + WalletConnect**. (No Ledger yet.)
 - Pricing: **150 USDT/month or 1,500 USDT/year** (2 months free), paid **on-chain via
-  smart contract** — no fiat, no card, no Stripe. Both plans are live. The two fee amounts are
-  **owner-adjustable on-chain** (`updateSubscriptionFees`) — no redeploy, no proxy; custody is
-  never affected.
+  smart contract** — no fiat, no card, no Stripe. Both plans are live. The owner surface is
+  **fee amounts + treasury destination** (`updateSubscriptionFees` + `updateTreasuryWallet` +
+  `transferOwnership`) — owner-adjustable on-chain, no redeploy, no proxy; `treasuryWallet`
+  receives only our own fee, so custody is never affected. `usdt` stays immutable.
+- Mainnet USDT-TRC20 requires resetting a non-zero allowance to 0 before re-approving; this is
+  **implemented** in `ensureAllowance` (`src/lib/tron/allowance.ts`), wired into both the
+  disperse and subscribe approve paths, and announces the extra prompt calmly (Law of UX #2).
+- Energy constants (`ENERGY_*` / `feeLimitForBatch`) are **Nile-measured** and re-calibrated
+  **empirically on mainnet** (one small real batch → read Tronscan → tune); `feeLimit` is a
+  ceiling, not a charge. The old `measure.cjs` is broken/retired. See docs/06 §6.
 - Free tier: **1 payee per payer wallet, once every 30 days, forever** — a mainnet smoke test,
   enforced **off-chain** in the authorize route (never in `disperse`). Everything beyond it
   needs a subscription (or referral credit). There is **no testnet sandbox** — discarded, see
@@ -276,9 +298,12 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   stored server-side encrypted** (pgcrypto AES-256 — dissociation); recipient addresses
   are salted-hashed for OFAC. Purser stores nothing it can read.
 - The contract is **ours** (not a third party's). Its **`disperse` path is permissionless
-  and immutable** and it never takes custody. The **only** owner-privileged action is
-  adjusting the **subscription fees** (`updateSubscriptionFees` / `transferOwnership`) —
-  fee-only, and it can never reach funds, keys, broadcast, pause, or disperse.
+  and immutable** and it never takes custody. The owner-privileged surface is the
+  **subscription fees + the treasury destination** (`updateSubscriptionFees` +
+  `updateTreasuryWallet` + `transferOwnership`) — monetization-only, and it can never reach
+  funds, keys, broadcast, pause, or disperse. `treasuryWallet` receives only our own fee (never
+  user funds) and is owner-updatable so revenue can move to cold/multisig without a redeploy;
+  `usdt` stays immutable.
 - The batch is **atomic**: all recipients paid in one tx, or none. No partial payout.
   Check balance ≥ sum-of-selected BEFORE enabling "Pay all"; if short, lock the button
   and say how much is missing — never silently drop payees.
@@ -294,9 +319,15 @@ cross-device **roster** sync (the roster is per-device by design — a privacy f
 bug; encrypted account PII plus the free-tier/referral rows live server-side, but the roster
 never does — and subscription state is on-chain, not server-side) · analytics dashboards ·
 any server-side storage of the **roster** (encrypted account PII lives server-side; the roster
-does not) · **a testnet sandbox / demo / trial environment** (discarded, not deferred — the
-mainnet free tier does its job better; see docs/07 §1 and the "Discarded" list in
-docs/README.md).
+does not) · **a customer-facing testnet sandbox / demo / trial environment** (discarded, not
+deferred — the mainnet free tier does its job better; see docs/07 §1 and the "Discarded" list in
+docs/README.md). NOTE: this discarded item is a *customer product feature* — it is **not** the
+same as the **internal two-deployment model** (a `mainnet` prod deployment + a `nile` sandbox
+deployment, separate Vercel envs + separate Supabase projects, chosen by
+`NEXT_PUBLIC_TRON_NETWORK`) added for mainnet readiness. That internal engineering environment
+exists and stays; the closed customer-sandbox decision is not reopened. · **a runtime network
+toggle** (rejected — desyncs client from server and cross-writes the production Supabase; see
+docs/06 §4).
 
 The **free tier** (1 payee / 30 days) and **off-chain referral credit** ARE shipped — they are
 *not* on this list; see STANDING FACTS. If you think you need one of the above, you don't —

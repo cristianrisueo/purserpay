@@ -89,6 +89,15 @@ export const DISPERSE_ABI: AbiFragment[] = [
     inputs: [{ name: "newOwner", type: "address" }],
     outputs: [],
   },
+  // updateTreasuryWallet: owner-only redirect of OUR OWN subscription-fee destination
+  // (never user funds, never disperse). treasuryWallet is storage, not immutable.
+  {
+    type: "function",
+    name: "updateTreasuryWallet",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "_newTreasury", type: "address" }],
+    outputs: [],
+  },
   {
     type: "event",
     name: "SubscriptionFeesUpdated",
@@ -103,6 +112,14 @@ export const DISPERSE_ABI: AbiFragment[] = [
     inputs: [
       { name: "previousOwner", type: "address", indexed: true },
       { name: "newOwner", type: "address", indexed: true },
+    ],
+  },
+  {
+    type: "event",
+    name: "TreasuryWalletUpdated",
+    inputs: [
+      { name: "previousTreasury", type: "address", indexed: true },
+      { name: "newTreasury", type: "address", indexed: true },
     ],
   },
   // --- read-only surface (subscription state, immutables, constants) ---

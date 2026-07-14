@@ -1,3 +1,18 @@
+// ============================================================================
+// ⛔ BROKEN — DO NOT RUN. DEAD SOURCE REFERENCES.
+// ----------------------------------------------------------------------------
+// This script (and its helper compile.cjs) compiles + deploys PurseDisperseUsdt.sol
+// and mocks/MockUsdtTrc20.sol — BOTH DELETED from the repo when the contract was
+// unified into contracts/src/PurserPay.sol. `compileAll()` therefore throws on a
+// missing file; the script cannot run end-to-end. It is NOT repaired on purpose:
+// mainnet energy cannot be measured with a mintable mock anyway (real USDT has no
+// mint), so it is SUPERSEDED by empirical on-chain calibration — after the mainnet
+// deploy, run ONE small real batch (2–3 recipients), read the exact energy from
+// Tronscan, and tune ENERGY_* / feeLimitForBatch() in src/lib/tron/config.ts from
+// that. See docs/06 "Calibrating energy on mainnet". Kept only as the historical
+// record of how the Nile constants were originally derived.
+// ============================================================================
+//
 // measure.js — Sprint 3B-measure orchestrator.
 //
 // Deploys MockUsdtTrc20 + PurseDisperseUsdt to the TRON Nile testnet, then

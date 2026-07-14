@@ -27,11 +27,11 @@ Zero external Solidity dependencies: `ITRC20` is declared inline and ownership i
 flowchart TB
     subgraph Immutable["Set once in constructor — can NEVER change"]
         usdt["usdt (token)"]
-        treasury["treasuryWallet"]
         periods["SUBSCRIPTION_PERIOD = 30d<br/>SUBSCRIPTION_PERIOD_ANNUAL = 365d (constant)"]
     end
     subgraph OwnerCtl["Owner-adjustable — the ONLY privileged surface"]
         prices["SUBSCRIPTION_PRICE / _ANNUAL<br/>via updateSubscriptionFees()"]
+        treasury["treasuryWallet<br/>via updateTreasuryWallet()"]
         role["owner via transferOwnership()"]
     end
     subgraph Permissionless["Permissionless — no gate, no owner"]
@@ -47,14 +47,24 @@ flowchart TB
 ```
 
 **The owner can never** touch funds, hold custody, access keys, broadcast, pause anything,
-or alter `disperse()`. Its *only* powers are setting the two fee numbers and handing off
+or alter `disperse()`. Its *only* powers are setting the two fee numbers, **redirecting the
+treasury that receives our own subscription fee** (`updateTreasuryWallet`), and handing off
 the role. See [`02-non-custodial.md`](./02-non-custodial.md) for how this reconciles with
 "non-custodial".
+
+> **Why `treasuryWallet` is owner-updatable (and not immutable).** It was `immutable`. That
+> meant moving revenue to a hardware/multisig wallet later would have required a FRESH DEPLOY —
+> and since there is no proxy, a redeploy is a new contract that **wipes every subscriber's
+> on-chain `subscriptionExpiresAt`**. So the safest future action (hardening custody) carried
+> the highest possible cost. Making it updatable removes that trap. It only ever *receives*
+> our own fee — `disperse()` never references it — so redirecting it cannot touch user custody.
+> `usdt` stays immutable (changing the token would break every standing approval).
 
 | Invariant | Guaranteed by |
 | --- | --- |
 | Contract's own token balance is always 0 | every transfer is direct payer→recipient / subscriber→treasury; no code path receives tokens. Foundry `invariant_*` test. |
-| `usdt`, `treasuryWallet` never change | `immutable`, set in constructor, zero-address-guarded (`ZeroAddressConfig`). |
+| `usdt` never changes | `immutable`, set in constructor, zero-address-guarded (`ZeroAddressConfig`). |
+| `treasuryWallet` moves ONLY via `updateTreasuryWallet` (owner) | storage, zero-address-guarded; receives our own fee only, never in `disperse()`, so it can never reach user funds/custody. |
 | `disperse` is permissionless & immutable | no `onlyOwner`, no fee, no subscription check; logic can't be upgraded (no proxy). |
 | The **free tier is NOT and CANNOT be enforced on-chain** | `disperse` gates nothing — the 1-payee/30-day free tier is an OFF-CHAIN licence gate in `/api/payout/authorize`, exactly like OFAC. A direct TronWeb `disperse()` bypasses it (accepted). Do **not** add a gate to `disperse`. → [`07`](./07-freemium-gate.md) |
 | You can't subscribe by paying less/more | `subscribe` reads the price **live from storage** and pulls exactly it; a short balance/allowance reverts the whole tx. |
@@ -66,7 +76,7 @@ the role. See [`02-non-custodial.md`](./02-non-custodial.md) for how this reconc
 | Name | Type | Set by | Notes |
 | --- | --- | --- | --- |
 | `usdt` | `address immutable` | constructor | the USDT-TRC20 token subscriptions are charged in |
-| `treasuryWallet` | `address immutable` | constructor | cold wallet receiving every subscription payment |
+| `treasuryWallet` | `address` (storage) | constructor, `updateTreasuryWallet` | wallet receiving every subscription payment; owner-updatable so it can move to cold/multisig without a redeploy |
 | `owner` | `address` | constructor (`msg.sender`), `transferOwnership` | sole privileged account (fee governance only) |
 | `SUBSCRIPTION_PRICE` | `uint256` | constructor `150e6`, `updateSubscriptionFees` | monthly (plan 0), base units (6 dp) |
 | `SUBSCRIPTION_PRICE_ANNUAL` | `uint256` | constructor `1500e6`, `updateSubscriptionFees` | annual (plan 1) |
@@ -91,6 +101,7 @@ initializes fees to `150e6 / 1500e6`.
 | `subscribe(uint8 planType)` | any caller | Reads price/period for plan 0 or 1 (`InvalidPlan` otherwise); writes `expiry = now + period` (CEI); `_safeTransferFrom(usdt, caller, treasury, price)`; emits `SubscriptionPaid`. |
 | `isSubscriptionActive(address) view` | view | `subscriptionExpiresAt[account] > block.timestamp`. |
 | `updateSubscriptionFees(uint256 newMonthly, uint256 newAnnual)` | `onlyOwner` | Sets both prices; emits `SubscriptionFeesUpdated`. Applies to every subsequent `subscribe`; existing subs and `disperse` untouched. |
+| `updateTreasuryWallet(address newTreasury)` | `onlyOwner` | Redirects where future subscription fees are sent; zero-address-guarded; emits `TreasuryWalletUpdated`. Moves only our own revenue destination — never user funds, custody, or `disperse`. Applies to every subsequent `subscribe`. |
 | `transferOwnership(address newOwner)` | `onlyOwner` | Hands off `owner`; zero-address-guarded; emits `OwnershipTransferred`. No renounce. |
 | `_safeTransferFrom(token, from, to, amount)` | `private` | `token.call(transferFrom…)`; treats revert **or** a `false` return as failure → `TransferFailed`. Mirrors OZ SafeERC20 without the dependency. |
 
@@ -116,6 +127,7 @@ initializes fees to `150e6 / 1500e6`.
 
 **Events:** `SubscriptionPaid(subscriber, amount, timestamp, expirationTime)`,
 `SubscriptionFeesUpdated(newMonthly, newAnnual)`,
+`TreasuryWalletUpdated(previousTreasury, newTreasury)`,
 `OwnershipTransferred(previousOwner, newOwner)`,
 `Dispersed(payer, token, recipientCount, totalAmount)`.
 
@@ -160,15 +172,18 @@ bytecode; there is no re-compile at deploy time. See [`06-deployment.md`](./06-d
 
 ## 8. Tests (`contracts/test/PurserPay.t.sol`)
 
-**26 tests: 25 unit + 1 stateful invariant.** Run with `cd contracts && forge test -vv`.
+**30 tests: 29 unit + 1 stateful invariant.** Run with `cd contracts && forge test -vv`.
 
 Coverage includes: constructor immutables + owner grant; disperse happy-path,
 length/empty/zero guards, atomicity, non-compliant-token handling; subscribe for both
 plans, exact-price pull, `InvalidPlan`, expiry math; the owner surface
 (`updateSubscriptionFees` updates + charges the new price, `NotOwner` reverts,
-`transferOwnership` hand-off + zero-address guard). The stateful **`invariant_*`** test
-asserts the contract **never holds USDT** across a fuzzed call sequence (last run:
-128,000 calls, 0 reverts).
+`transferOwnership` hand-off + zero-address guard); and **`updateTreasuryWallet`** (owner
+redirects the treasury → a subsequent `subscribe` pays the NEW treasury and not the old
+one, `NotOwner` reverts, zero-address guard, `TreasuryWalletUpdated` event, and disperse +
+the never-holds-USDT invariant unaffected). The stateful **`invariant_*`** test asserts the
+contract **never holds USDT** across a fuzzed call sequence (last run: 128,000 calls, 0
+reverts).
 
 When you change the contract, extend these tests **and** update this doc + `abi.ts` in the
 same change.

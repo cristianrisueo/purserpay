@@ -1,4 +1,5 @@
 import { ERC20_ABI, PURSERPAY_ABI } from "./abi"
+import { ensureAllowance } from "./allowance"
 import type { InjectedTronWeb } from "./client"
 import { getInjectedTronWeb } from "./client"
 import {
@@ -150,6 +151,9 @@ export type ConfirmedBatch = {
 export type DisperseEvents = {
   /** An approve is needed and about to be requested. */
   onApproveStart?: () => void
+  /** A non-zero, insufficient allowance must be reset to 0 first (mainnet
+   *  USDT-TRC20 rule) — the user will see an EXTRA wallet prompt. */
+  onApproveReset?: () => void
   onApproveConfirmed?: (txid: string) => void
   /** A batch is waiting for the user's signature in the wallet. */
   onBatchSigning?: (batchIndex: number, totalBatches: number, rowIds: string[]) => void
@@ -209,26 +213,37 @@ export async function runDisperse(
   const outcome: DisperseOutcome = { confirmed }
 
   // Approve once for the whole run if the standing allowance is short. Fewer
-  // signatures = closer to the ≤3-click law. (Mainnet USDT-TRC20 requires
-  // resetting a non-zero allowance to 0 first — flag for the mainnet switch;
-  // the Nile mock needs no reset.)
+  // signatures = closer to the ≤3-click law. ensureAllowance handles mainnet
+  // USDT-TRC20's require(allowance == 0 || value == 0): a non-zero-but-short
+  // allowance is reset to 0 first (an extra prompt, announced via onApproveReset)
+  // before re-approving. The Nile mock has no such rule, so its path is unchanged.
   const currentAllowance = await getAllowance(operator)
-  if (currentAllowance < grandTotal) {
-    events.onApproveStart?.()
-    let approveTxid: string
-    try {
-      approveTxid = await erc20(tw)
-        .approve(DISPERSE_ADDRESS, grandTotal.toString())
-        .send({ feeLimit: APPROVE_FEE_LIMIT_SUN })
-    } catch (e) {
-      throw humanize(e)
-    }
-    const rc = await waitForReceipt(tw, approveTxid, signal)
-    if (rc.result !== "SUCCESS") {
-      throw rc.result === "REVERT"
-        ? decodeRevert(rc.contractResult?.[0])
-        : fromReceiptResult(rc.result)
-    }
+  const { approveTxid } = await ensureAllowance(
+    currentAllowance,
+    grandTotal,
+    DISPERSE_ADDRESS,
+    {
+      approve: async (spender, value) => {
+        try {
+          return await erc20(tw)
+            .approve(spender, value.toString())
+            .send({ feeLimit: APPROVE_FEE_LIMIT_SUN })
+        } catch (e) {
+          throw humanize(e)
+        }
+      },
+      confirm: async (txid) => {
+        const rc = await waitForReceipt(tw, txid, signal)
+        if (rc.result !== "SUCCESS") {
+          throw rc.result === "REVERT"
+            ? decodeRevert(rc.contractResult?.[0])
+            : fromReceiptResult(rc.result)
+        }
+      },
+    },
+    { onApproveStart: events.onApproveStart, onApproveReset: events.onApproveReset }
+  )
+  if (approveTxid) {
     outcome.approveTxid = approveTxid
     events.onApproveConfirmed?.(approveTxid)
   }

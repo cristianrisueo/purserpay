@@ -11,18 +11,49 @@
 
 const { TronWeb } = require("tronweb");
 
-const FULL_HOST = "https://nile.trongrid.io";
-const NILE_TX = "https://nile.tronscan.org/#/transaction/";
-const NILE_ADDR = "https://nile.tronscan.org/#/contract/";
-
 const SUN = 1_000_000; // 1 TRX = 1e6 sun
 const MAX_UINT256 =
   "115792089237316195423570985008687907853269984665640564039457584007913129639935";
 
+// --- network resolution (env-driven, NO default — fail closed) --------------
+// The deploy/verify scripts pick their network from DEPLOY_NETWORK. There is
+// deliberately no default: a missing or unrecognized value throws, so a script can
+// never quietly point at the wrong chain (a deploy is irreversible and burns TRX).
+// Mirrors the build-time seam in src/lib/tron/config.ts.
+const NETWORKS = {
+  nile: {
+    key: "nile",
+    fullHost: "https://nile.trongrid.io",
+    txBase: "https://nile.tronscan.org/#/transaction/",
+    addrBase: "https://nile.tronscan.org/#/contract/",
+  },
+  mainnet: {
+    key: "mainnet",
+    fullHost: "https://api.trongrid.io",
+    txBase: "https://tronscan.org/#/transaction/",
+    addrBase: "https://tronscan.org/#/contract/",
+  },
+};
+
+/** Resolve the target network from DEPLOY_NETWORK. Throws on missing/unknown. */
+function resolveNetwork() {
+  const key = process.env.DEPLOY_NETWORK;
+  const net = key ? NETWORKS[key] : undefined;
+  if (!net) {
+    throw new Error(
+      `DEPLOY_NETWORK must be one of: ${Object.keys(NETWORKS).join(" | ")} — got ` +
+        `${JSON.stringify(key)}. No default (fail closed) — set it before running.`
+    );
+  }
+  return net;
+}
+
 // A keyless instance, purely for pure utility functions (keccak, account gen).
 // In tronweb v6 these live on the INSTANCE (`tw.utils.*`), not the static class.
-// Construction makes no network call.
-const _u = new TronWeb({ fullHost: FULL_HOST });
+// Construction makes no network call, so a network-agnostic host is fine here — it
+// deliberately does NOT resolveNetwork(), so `require`-ing this module never needs
+// DEPLOY_NETWORK set.
+const _u = new TronWeb({ fullHost: "https://api.trongrid.io" });
 
 // --- setup -----------------------------------------------------------------
 
@@ -30,12 +61,13 @@ function getTronWeb() {
   const pk = process.env.PRIVATE_KEY;
   if (!pk || pk.trim().length === 0) {
     throw new Error(
-      "PRIVATE_KEY is not set. Create contracts/scripts/.env with a line " +
-        "PRIVATE_KEY=<your funded Nile testnet key> (no 0x prefix). " +
+      "PRIVATE_KEY is not set. Create a gitignored .env with a line " +
+        "PRIVATE_KEY=<your funded key for DEPLOY_NETWORK> (no 0x prefix). " +
         "The file is gitignored; the key is never printed or committed."
     );
   }
-  const tronWeb = new TronWeb({ fullHost: FULL_HOST, privateKey: pk.trim() });
+  const net = resolveNetwork();
+  const tronWeb = new TronWeb({ fullHost: net.fullHost, privateKey: pk.trim() });
   return tronWeb;
 }
 
@@ -244,13 +276,16 @@ function decodeDispersed(tronWeb, info) {
 
 // --- misc ------------------------------------------------------------------
 
-const trxLink = (txid) => NILE_TX + txid;
-const addrLink = (addr) => NILE_ADDR + addr;
+// Explorer links for the resolved network. Only ever called after getTronWeb()
+// has succeeded, so DEPLOY_NETWORK is already validated.
+const trxLink = (txid) => resolveNetwork().txBase + txid;
+const addrLink = (addr) => resolveNetwork().addrBase + addr;
 const sunToTrx = (sun) => Number(sun) / SUN;
 
 module.exports = {
   TronWeb,
-  FULL_HOST,
+  NETWORKS,
+  resolveNetwork,
   SUN,
   MAX_UINT256,
   getTronWeb,

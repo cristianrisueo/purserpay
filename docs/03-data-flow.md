@@ -139,9 +139,12 @@ Atomicity guarantee: the on-chain `disperse` is all-or-nothing (see
 [`05`](./05-smart-contract.md)). The frontend never paints green except on a `SUCCESS`
 receipt.
 
-> **Mainnet caveat (flagged in code):** mainnet USDT-TRC20 requires resetting a non-zero
-> allowance to 0 before re-approving. The Nile mock does not. See
-> [`06-deployment.md`](./06-deployment.md).
+> **Mainnet allowance reset (implemented):** mainnet USDT-TRC20 requires resetting a non-zero
+> allowance to 0 before re-approving; the Nile mock does not. `ensureAllowance`
+> (`src/lib/tron/allowance.ts`, wired into both `disperse.ts` and `subscription.ts`) handles
+> this: a non-zero-but-short allowance is cleared to 0 (confirmed by receipt) before the real
+> approve, and the extra wallet prompt is announced calmly (Law of UX #2). See
+> [`06-deployment.md`](./06-deployment.md) §6.
 
 ## 6. The subscription read (`src/lib/tron/subscription.ts`)
 

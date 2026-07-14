@@ -1,4 +1,5 @@
 import { PURSERPAY_ABI } from "./abi"
+import { ensureAllowance } from "./allowance"
 import type { InjectedTronWeb } from "./client"
 import { readClient } from "./client"
 import {
@@ -111,6 +112,9 @@ export async function getSubscriptionStatus(
 export type SubscribeEvents = {
   /** An approve is needed and about to be requested. */
   onApproveStart?: () => void
+  /** A non-zero, insufficient allowance must be reset to 0 first (mainnet
+   *  USDT-TRC20 rule) — the user will see an EXTRA wallet prompt. */
+  onApproveReset?: () => void
   /** The subscribe tx is waiting for the user's signature in the wallet. */
   onSigning?: () => void
   /** Signed and broadcast; now confirming on-chain. */
@@ -146,8 +150,10 @@ export async function runSubscribe(
   const priceUnits = priceUnitsForPlan(plan)
 
   // Approve the plan's price to PurserPay if the existing allowance is short.
-  // (Mainnet USDT-TRC20 requires resetting a non-zero allowance to 0 first —
-  // flag for the mainnet switch; the Nile mock needs no reset.)
+  // ensureAllowance handles mainnet USDT-TRC20's require(allowance == 0 || value
+  // == 0): a non-zero-but-short allowance (e.g. left over from a monthly attempt,
+  // now switching to annual) is reset to 0 first — an EXTRA prompt announced via
+  // onApproveReset — before re-approving. The Nile mock has no such rule.
   let currentAllowance: bigint
   try {
     const raw = await erc20(tw).allowance(operator, PURSERPAY_ADDRESS).call()
@@ -159,24 +165,32 @@ export async function runSubscribe(
 
   const outcome: SubscribeOutcome = { txid: "" }
 
-  if (currentAllowance < priceUnits) {
-    events.onApproveStart?.()
-    let approveTxid: string
-    try {
-      approveTxid = await erc20(tw)
-        .approve(PURSERPAY_ADDRESS, priceUnits.toString())
-        .send({ feeLimit: APPROVE_FEE_LIMIT_SUN })
-    } catch (e) {
-      throw humanize(e)
-    }
-    const rc = await waitForReceipt(tw, approveTxid, signal)
-    if (rc.result !== "SUCCESS") {
-      throw rc.result === "REVERT"
-        ? decodeRevert(rc.contractResult?.[0])
-        : fromSubscribeReceiptResult(rc.result)
-    }
-    outcome.approveTxid = approveTxid
-  }
+  const { approveTxid } = await ensureAllowance(
+    currentAllowance,
+    priceUnits,
+    PURSERPAY_ADDRESS,
+    {
+      approve: async (spender, value) => {
+        try {
+          return await erc20(tw)
+            .approve(spender, value.toString())
+            .send({ feeLimit: APPROVE_FEE_LIMIT_SUN })
+        } catch (e) {
+          throw humanize(e)
+        }
+      },
+      confirm: async (txid) => {
+        const rc = await waitForReceipt(tw, txid, signal)
+        if (rc.result !== "SUCCESS") {
+          throw rc.result === "REVERT"
+            ? decodeRevert(rc.contractResult?.[0])
+            : fromSubscribeReceiptResult(rc.result)
+        }
+      },
+    },
+    { onApproveStart: events.onApproveStart, onApproveReset: events.onApproveReset }
+  )
+  if (approveTxid) outcome.approveTxid = approveTxid
 
   events.onSigning?.()
   let txid: string

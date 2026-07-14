@@ -1,33 +1,57 @@
-// verify-e2e.cjs — READ-ONLY on-chain verification for the PHASE 2 E2E suite.
+// verify-e2e.cjs — READ-ONLY on-chain verification for the E2E suite (env-driven).
 //
 // Keyless by design: builds its own TronWeb with NO private key and only ever calls
 // triggerConstantContract (constant/view reads). It never signs, never broadcasts,
 // never moves funds. Safe to run at any time; run it before and after the human test
 // steps and diff the printed numbers.
 //
-// Reads:
-//   PurserPay (TCmB…):  isSubscriptionActive(Wallet2), subscriptionExpiresAt(Wallet2)
-//   Mock USDT (TSYr…):  balanceOf(Wallet2, Luna, Marco, Priya, treasury)
+// EVERYTHING network-specific is env-driven with NO defaults (fail closed), matching
+// deploy.cjs so prod (mainnet) and sandbox (nile) never get crossed:
+//   DEPLOY_NETWORK     "nile" | "mainnet"     (picks fullHost + explorer)
+//   PURSERPAY_ADDRESS  the deployed contract
+//   USDT_ADDRESS       the token
+//   TREASURY_WALLET    the treasury to read a balance for
+//   VERIFY_WALLET      the tester wallet whose subscription/balance we read
+//   VERIFY_RECIPIENTS  OPTIONAL "Name:Taddr,Name:Taddr" test payees to print balances for
+// A missing required var aborts before any read.
 //
-// Usage:  node scripts/tron/verify-e2e.cjs
+// Usage:
+//   DEPLOY_NETWORK=nile PURSERPAY_ADDRESS=… USDT_ADDRESS=… TREASURY_WALLET=… \
+//     VERIFY_WALLET=… node scripts/tron/verify-e2e.cjs
 
-const { TronWeb } = require("tronweb");
+const path = require("path");
+const ROOT = path.resolve(__dirname, "../..");
+require("dotenv").config({ path: path.join(ROOT, ".env") });
+require("dotenv").config({ path: path.join(ROOT, ".env.local") });
 
-const FULL_HOST = "https://nile.trongrid.io";
+const L = require("./lib.cjs");
+const { TronWeb } = L;
 
-// --- addresses (the PHASE 2 test vector) -----------------------------------
-const PURSERPAY = "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG";
-const USDT = "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf";
-const WALLET2 = "THfX1kFnhmPzA3dezaXy7EpXMaLYrJnEzi"; // tester
-const TREASURY = "TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2"; // Wallet 1 / treasury
-const RECIPIENTS = [
-  ["Luna", "TXRq2AHYDM7XEqiTbGxJWXaoStGattVPBi"],
-  ["Marco", "TKtoPDoDxfA3VHLWZ16xgbNRsnTa27LJMY"],
-  ["Priya", "TVA4rWscxng3AwibKg6rytPSBwc7iA9v6N"],
-];
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v || String(v).trim() === "") {
+    throw new Error(`${name} is required (no default). Set it before running. Aborting.`);
+  }
+  return String(v).trim();
+}
+
+// --- config (env-driven — no defaults) --------------------------------------
+const NET = L.resolveNetwork(); // validates DEPLOY_NETWORK (throws on missing/unknown)
+const PURSERPAY = requireEnv("PURSERPAY_ADDRESS");
+const USDT = requireEnv("USDT_ADDRESS");
+const TREASURY = requireEnv("TREASURY_WALLET");
+const WALLET2 = requireEnv("VERIFY_WALLET"); // the tester wallet we read
+const RECIPIENTS = (process.env.VERIFY_RECIPIENTS || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((pair) => {
+    const idx = pair.indexOf(":");
+    return [pair.slice(0, idx), pair.slice(idx + 1)];
+  });
 
 // Keyless instance — no privateKey. Constant calls need a `from` address, not a key.
-const tw = new TronWeb({ fullHost: FULL_HOST });
+const tw = new TronWeb({ fullHost: NET.fullHost });
 
 async function constCall(contract, funcSig, params, from) {
   const res = await tw.transactionBuilder.triggerConstantContract(
@@ -60,7 +84,7 @@ const usdt = (units) => (Number(units) / 1_000_000).toLocaleString("en-US");
 
 async function main() {
   console.log("──────────────────────────────────────────────────────────────");
-  console.log("PHASE 2 E2E — read-only on-chain state (Nile)");
+  console.log(`E2E — read-only on-chain state (${NET.key})`);
   console.log(`  contract: ${PURSERPAY}`);
   console.log(`  usdt:     ${USDT}`);
   console.log("──────────────────────────────────────────────────────────────");

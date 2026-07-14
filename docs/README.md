@@ -77,10 +77,12 @@ Break any of these and the change is wrong by definition. Sources in the linked 
   locally, never transmitted. → [`03`](./03-data-flow.md) §7
 - **Atomic batches, no false green.** A row turns green only on a `SUCCESS` receipt; a
   short balance locks the button and says how much is missing. → [`03`](./03-data-flow.md)
-- **The only owner power is repricing the flat subscription fee** (`updateSubscriptionFees`
-  / `transferOwnership`) — never funds, keys, broadcast, pause, or `disperse`. Don't claim
-  "no admin keys" without the fee-only qualification. → [`02`](./02-non-custodial.md),
-  [`05`](./05-smart-contract.md)
+- **The owner surface is the two subscription fees + the treasury destination**
+  (`updateSubscriptionFees`, `updateTreasuryWallet`, `transferOwnership`) — never funds, keys,
+  broadcast, pause, or `disperse`. `treasuryWallet` receives only our own fee (never user
+  funds), and is owner-updatable so revenue can move to cold/multisig without a redeploy that
+  would wipe every subscriber's expiry. Don't claim "no admin keys" without this qualification.
+  → [`02`](./02-non-custodial.md), [`05`](./05-smart-contract.md)
 - **The free tier is OFF-CHAIN, anchored on the PAYER wallet hash only.** 1 payee / 30 days,
   enforced in the authorize route (never in `disperse`, which can't and won't gate it). The
   slot is consumed **atomically, optimistically, before broadcast** (one `INSERT … ON
@@ -107,11 +109,15 @@ Break any of these and the change is wrong by definition. Sources in the linked 
 Decisions the owner has closed permanently. A doc that promises one of these is a bug —
 delete the promise, don't build the feature.
 
-- **Testnet sandbox / demo / trial environment.** Discarded, not deferred. The mainnet free
-  tier (1 payee / 30 days — [`07`](./07-freemium-gate.md)) does its job strictly better:
-  it proves the product with the user's REAL wallet and REAL money (a testnet can't), with
-  LESS friction (no "add Nile + find a faucet" step), and without a permanent second network
-  configuration (a standing bug surface across expiry dates, contracts, balances, receipts).
-  This is **not** the same as Nile being the *current dev/deploy network* in
-  `src/lib/tron/config.ts` — that is a deploy-target fact and it stays; only "sandbox as a
-  future product feature" is dead. See [`07`](./07-freemium-gate.md) §1.
+- **Testnet sandbox / demo / trial environment (as a CUSTOMER-FACING product).** Discarded, not
+  deferred. The mainnet free tier (1 payee / 30 days — [`07`](./07-freemium-gate.md)) does its
+  job strictly better: it proves the product with the user's REAL wallet and REAL money (a
+  testnet can't), with LESS friction (no "add Nile + find a faucet" step), and without a
+  permanent second network configuration exposed to users.
+  This is **not** the same as two things that DO exist and stay: (a) Nile as the *current
+  dev/deploy network* in `src/lib/tron/config.ts`; and (b) the **internal two-deployment model**
+  added for mainnet readiness — a `mainnet` production deployment and a `nile` **sandbox
+  deployment** (separate Vercel envs + separate Supabase projects), selected at build time by
+  `NEXT_PUBLIC_TRON_NETWORK` ([`06`](./06-deployment.md) §1). That sandbox is an *internal
+  engineering environment*, not a customer product feature — the closed decision is not
+  reopened. Only "sandbox as a future product feature" is dead. See [`07`](./07-freemium-gate.md) §1.

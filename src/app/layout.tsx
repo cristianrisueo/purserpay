@@ -5,6 +5,8 @@ import type { Metadata, Viewport } from "next"
 // variable font packages via its own @import lines.
 import "@/styles/globals.css"
 
+import { SandboxBanner } from "@/components/SandboxBanner"
+
 export const metadata: Metadata = {
   // Resolves the relative OG/Twitter image path to an absolute URL and silences the
   // Next.js "metadataBase not set" build warning.
@@ -46,7 +48,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body>{children}</body>
+      <body>
+        {/* Non-mainnet builds only; dead-weight on a mainnet build (renders null). */}
+        <SandboxBanner />
+        {children}
+      </body>
     </html>
   )
 }

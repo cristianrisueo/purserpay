@@ -90,6 +90,10 @@ function statusLine({
 
 function payingLabel(phase: BatchPhase): string {
   switch (phase.kind) {
+    case "resetting":
+      // Mainnet USDT needs a standing approval cleared to 0 before a new one — a
+      // surprise second signature is a fear event (Law #2), so name it plainly.
+      return "Clearing previous approval…"
     case "approving":
       return "Approving…"
     case "signing":
@@ -160,7 +164,9 @@ export function PayoutControls({
         </div>
         {showProgress ? (
           <div className="mt-1 text-[13px] font-medium text-primary">
-            {payLabel}
+            {batchPhase.kind === "resetting"
+              ? "Clearing your previous approval first — one extra signature."
+              : payLabel}
           </div>
         ) : payError ? (
           <div className="mt-1 text-[13px] font-medium text-destructive">

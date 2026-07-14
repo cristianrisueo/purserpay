@@ -30,23 +30,37 @@ interface ITRC20 {
  * @dev    Non-custodial and no-proxy by design: no withdraw, no upgrade path, no
  *         payable/receive/fallback, and the contract never takes custody of any token —
  *         every transfer is a direct payer -> recipient (or subscriber -> treasury)
- *         move, so its own token balance is invariably zero. `usdt` and `treasuryWallet`
- *         are immutable (set once in the constructor, can never change) and disperse() is
- *         permissionless (ownerless — no privileged caller). The SOLE privileged action is
- *         the `owner` adjusting the two subscription-fee amounts via updateSubscriptionFees;
- *         that power can never touch funds, keys, broadcast, pause anything, or alter the
- *         disperse path.
+ *         move, so its own token balance is invariably zero. `usdt` is immutable (set once
+ *         in the constructor, can never change — changing the token would break every
+ *         standing approval). `treasuryWallet` is NOT immutable: it is owner-updatable via
+ *         updateTreasuryWallet, and it only ever RECEIVES PurserPay's own subscription fee
+ *         (never user funds — disperse() references neither owner nor treasury), so
+ *         redirecting it can never touch custody. Why it must be updatable: it was immutable,
+ *         which meant moving revenue to a hardware/multisig wallet later would have required
+ *         a FRESH DEPLOY — destroying every subscriber's on-chain subscriptionExpiresAt. That
+ *         trap is removed here. disperse() stays permissionless (ownerless — no privileged
+ *         caller). The owner's ENTIRE surface is: the two subscription-fee amounts
+ *         (updateSubscriptionFees), the treasury destination (updateTreasuryWallet), and the
+ *         owner role (transferOwnership) — and nothing else. None of these can ever touch
+ *         funds, keys, broadcast, pause anything, or alter the disperse path.
  */
 contract PurserPay {
     // -------------------------------------------------------------------------
-    // Immutable configuration (token + treasury — set once, forever)
+    // Token (immutable — set once, forever; changing it would break every approval)
     // -------------------------------------------------------------------------
 
     /// @notice The one token subscriptions are paid in (USDT-TRC20 on mainnet).
     address public immutable usdt;
 
-    /// @notice Cold treasury that receives every subscription payment.
-    address public immutable treasuryWallet;
+    // -------------------------------------------------------------------------
+    // Treasury (owner-updatable storage — receives ONLY our own subscription fee)
+    // -------------------------------------------------------------------------
+
+    /// @notice Treasury that receives every subscription payment. Owner-updatable via
+    ///         updateTreasuryWallet so revenue can move to a cold/multisig wallet WITHOUT a
+    ///         redeploy (a redeploy would wipe every subscriber's expiry). It only ever
+    ///         receives our own fee — never user funds — so redirecting it can't touch custody.
+    address public treasuryWallet;
 
     // -------------------------------------------------------------------------
     // Ownership (the ONLY admin key — governs subscription fees, nothing else)
@@ -92,6 +106,10 @@ contract PurserPay {
 
     /// @notice Emitted when ownership is transferred (including the initial constructor grant).
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
+    /// @notice Emitted when the owner redirects the subscription-fee treasury. Only our own
+    ///         revenue destination moves; user funds and the disperse path are untouched.
+    event TreasuryWalletUpdated(address indexed previousTreasury, address indexed newTreasury);
 
     /// @notice Emitted once per successful batch. Per-recipient traceability is left
     ///         to the token's own Transfer events. Signature preserved from the prior
@@ -214,6 +232,21 @@ contract PurserPay {
         SUBSCRIPTION_PRICE = _newMonthly;
         SUBSCRIPTION_PRICE_ANNUAL = _newAnnual;
         emit SubscriptionFeesUpdated(_newMonthly, _newAnnual);
+    }
+
+    /**
+     * @notice Redirect where future subscription fees are sent. Applies to every subsequent
+     *         subscribe(); it moves ONLY our own revenue destination — it can never reach user
+     *         funds, custody, keys, broadcast, pause, or disperse(). This exists so the treasury
+     *         can be hardened to a cold/multisig wallet WITHOUT a redeploy (a redeploy would
+     *         destroy every subscriber's expiry). Guards the zero address (`ZeroAddressConfig`).
+     * @param  _newTreasury The wallet future subscription fees are forwarded to.
+     */
+    function updateTreasuryWallet(address _newTreasury) external onlyOwner {
+        if (_newTreasury == address(0)) revert ZeroAddressConfig();
+        address previous = treasuryWallet;
+        treasuryWallet = _newTreasury;
+        emit TreasuryWalletUpdated(previous, _newTreasury);
     }
 
     /**

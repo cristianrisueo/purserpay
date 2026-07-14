@@ -67,6 +67,7 @@ export type BlockReason = "address" | "amount"
 /** The batch-level progress the controls read for their label/status. */
 export type BatchPhase =
   | { kind: "idle" }
+  | { kind: "resetting" }
   | { kind: "approving" }
   | { kind: "signing"; index: number; total: number }
   | { kind: "confirming"; index: number; total: number }
@@ -75,6 +76,7 @@ export type BatchPhase =
 export type SubscribePhase =
   | "idle"
   | "storing"
+  | "resetting"
   | "approving"
   | "signing"
   | "confirming"
@@ -661,6 +663,7 @@ export function usePayout() {
       let outcome: Awaited<ReturnType<typeof runDisperse>> | undefined
       try {
         outcome = await runDisperse(account.address, disperseRows, {
+          onApproveReset: () => setBatchPhase({ kind: "resetting" }),
           onApproveStart: () => setBatchPhase({ kind: "approving" }),
           onBatchSigning: (index, total, rowIds) => {
             setBatchPhase({ kind: "signing", index, total })
@@ -740,6 +743,7 @@ export function usePayout() {
         //    a non-subscriber. `plan` is chosen in the SubscribeDialog selector
         //    (0 = monthly / 1 = annual); the dashboard opens it on monthly by default.
         const { txid } = await runSubscribe(account.address, plan, {
+          onApproveReset: () => setSubscribePhase("resetting"),
           onApproveStart: () => setSubscribePhase("approving"),
           onSigning: () => setSubscribePhase("signing"),
           onConfirming: () => setSubscribePhase("confirming"),

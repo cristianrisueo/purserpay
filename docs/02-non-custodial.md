@@ -38,7 +38,7 @@ enforced at specific, verifiable points. Do not weaken any of them.
 | Purser never signs | `src/lib/tron/client.ts` | Two TronWeb instances kept apart: a **keyless** `readClient()` (no signer, reads only) and `getInjectedTronWeb()` (TronLink's, already the user's account). **All** writes use the injected one. |
 | Purser never broadcasts | `src/lib/tron/disperse.ts`, `subscription.ts` | Every `.send()` is called on a contract bound to the **injected** wallet — TronLink signs and propagates. There is no server-side signer anywhere in the repo. |
 | Purser never holds funds (on-chain) | `contracts/src/PurserPay.sol` | `disperse`/`subscribe` move value **directly** payer→recipient / subscriber→treasury via `transferFrom`. The contract's own token balance is **invariably zero** — proven by a Foundry stateful invariant. |
-| No withdraw / upgrade / custody escape | `contracts/src/PurserPay.sol` | No `withdraw`, no proxy/upgrade path, no `payable`/`receive`/`fallback`. Immutable `usdt` + `treasuryWallet`. |
+| No withdraw / upgrade / custody escape | `contracts/src/PurserPay.sol` | No `withdraw`, no proxy/upgrade path, no `payable`/`receive`/`fallback`. Immutable `usdt`; `treasuryWallet` is owner-updatable storage but receives **only our own subscription fee** (never user funds — `disperse()` never references it), so it is no custody escape. |
 | Free path is permissionless | `contracts/src/PurserPay.sol` → `disperse()` | No owner gate, no fee, no subscription check on-chain. Anyone can call it; the subscription is a **frontend** business gate, not an on-chain one. |
 | Roster never leaves the device | `src/lib/db.ts`, `src/hooks/usePayout.ts` | The roster lives in IndexedDB (Dexie) only. No server call ever carries it. See [`03`](./03-data-flow.md). |
 | ✓✓ history read stays private | `src/lib/tron/validation.ts` | Only the operator's **own** wallet address is sent to the node (the user's own provider); payee addresses are matched **locally**. |
@@ -62,21 +62,27 @@ non-custodial. There is intentionally no private key in the web app's env (`PRIV
 exists only for the gitignored deploy script, `scripts/tron/deploy.cjs`, run by the owner
 locally — never in the running app).
 
-## The single qualification: owner-adjustable subscription fees
+## The qualification: owner-adjustable fees + treasury destination
 
-There is exactly **one** owner-privileged on-chain action, and it is a **pricing lever,
-not custody**:
+The owner-privileged on-chain surface is **our own monetization, never custody**:
 
 - `updateSubscriptionFees(uint256 newMonthly, uint256 newAnnual)` — sets the two
-  subscription prices. Plus `transferOwnership(address)` to hand off that role.
+  subscription prices.
+- `updateTreasuryWallet(address newTreasury)` — redirects where **our own** subscription fee
+  is sent. This exists so revenue can move to a cold/multisig wallet **without a redeploy** (a
+  redeploy would wipe every subscriber's on-chain expiry). It touches only our revenue
+  destination — `disperse()` never references `treasuryWallet`, so user funds are untouched.
+- Plus `transferOwnership(address)` to hand off that role.
 - The owner **can never**: touch funds, hold custody, access keys, broadcast on a user's
   behalf, pause/halt/reverse anything, or alter the permissionless `disperse` path.
 
 So the accurate phrasing (used in the public FAQ and `CLAUDE.md`) is:
 
-- **Non-custodial:** fully intact — unaffected by the owner role.
+- **Non-custodial:** fully intact — unaffected by the owner role. Redirecting our own fee to a
+  cold wallet is, if anything, *more* custody discipline, not less.
 - **"Ownerless / no admin keys":** *qualified* — the contract holds no admin keys **over
-  your money**; the sole owner power is repricing the flat subscription fee.
+  your money**; the owner powers are repricing the flat fee and pointing our own revenue at a
+  wallet we control.
 
 Do **not** revert to an absolute "no admin keys" claim in copy — it is inaccurate now.
 Details and the full governance rationale are in [`05-smart-contract.md`](./05-smart-contract.md).

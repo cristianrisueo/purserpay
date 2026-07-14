@@ -46,7 +46,10 @@ action, zero fear, beauty = trust.
 
 - **Non-custodial by construction.** Every signature goes through the user's own injected
   wallet; there is no server-side signer. The contract holds nothing (balance ≡ 0), has no
-  withdraw/upgrade/pause, and its `disperse` path is permissionless and immutable.
+  withdraw/upgrade/pause, and its `disperse` path is permissionless and immutable. The owner's
+  only powers are repricing the flat fee and redirecting **our own** subscription-fee treasury
+  (`updateTreasuryWallet`, for moving revenue to cold/multisig without a redeploy) — never user
+  funds, keys, broadcast, or `disperse`.
 - **Atomic batches, no false green.** A batch confirms whole or reverts whole; a row turns
   green only on a `SUCCESS` on-chain receipt.
 - **OFAC screening + fail-closed gates.** Recipients are screened server-side before any
@@ -81,7 +84,7 @@ action, zero fear, beauty = trust.
 | Account + compliance | Supabase (Postgres + pgcrypto) |
 | Web3 | tronweb 6 + TronLink (WalletConnect stubbed) |
 | Contract | own `PurserPay.sol` (Foundry) — `disperse` + `subscribe` |
-| Chain | **TRON only**, **USDT (TRC20) only** — Nile testnet today |
+| Chain | **TRON only**, **USDT (TRC20) only** — network chosen at build time by `NEXT_PUBLIC_TRON_NETWORK` (`mainnet \| nile`); Nile deployed today, mainnet pending |
 | Billing | on-chain subscription: **150 USDT/mo** or **1,500 USDT/yr** (no fiat, no Stripe) |
 | Free tier | **1 payee / payer wallet / 30 days**, forever — a mainnet smoke test. Off-chain licence gate ([`docs/07`](./docs/07-freemium-gate.md)); everything else needs the subscription. |
 | Referrals | asymmetric: a paying customer's first-paid referral banks them **one free month** (off-chain credit); the invitee pays full price. Reward == referee cost (**1:1**, self-referral is zero-margin). Behind `REFERRALS_ENABLED` ([`docs/08`](./docs/08-referrals-and-credit.md)). |
@@ -116,12 +119,13 @@ npm run typecheck                     # tsc --noEmit
 npm run build                         # production build
 npm run lint
 
-cd contracts && forge build && forge test -vv   # 26 tests (25 unit + 1 invariant)
+cd contracts && forge build && forge test -vv   # 30 tests (29 unit + 1 invariant)
 ```
 
 Environment variables are documented in `.env.local.example` and
-[`docs/04`](./docs/04-compliance-and-encryption.md). Deploying the contract / switching
-networks is in [`docs/06`](./docs/06-deployment.md).
+[`docs/04`](./docs/04-compliance-and-encryption.md). One is **required at build time**:
+`NEXT_PUBLIC_TRON_NETWORK` (`mainnet | nile`) — `config.ts` throws if it's missing. Deploying
+the contract / switching networks is in [`docs/06`](./docs/06-deployment.md).
 
 ## Documentation map
 
