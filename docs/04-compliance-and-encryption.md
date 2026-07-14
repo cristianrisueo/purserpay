@@ -135,7 +135,7 @@ Components:
 | `PII_ENCRYPTION_KEY` | **server-only** | `encrypt_and_store_pii` RPC | AES key; rotating makes existing ciphertext undecryptable |
 | `NEXT_PUBLIC_WC_PROJECT_ID` | public (optional) | `wallet.ts` | enables the WalletConnect option (stub today) |
 | `REFERRALS_ENABLED` | **server-only** | `src/lib/referral/config.ts` | referral kill switch; **default off** — gates reward grants + the dashboard card (attribution + honoring existing credit always run) |
-| `TRON_PRO_API_KEY` | **server-only** (optional) | `src/lib/tron/serverRead.ts` | lifts TronGrid rate limits for the gate's server-side reads; unnecessary on Nile |
+| `TRON_PRO_API_KEY` | **server-only** (optional on Nile, **REQUIRED on mainnet**) | `src/lib/tron/serverRead.ts` | lifts TronGrid rate limits for the gate's server-side reads. On mainnet, without it TronGrid throttles → `readSubscriptionActive()` returns null → gate fails closed for paying customers, so `serverRead.ts` **throws at boot** on a mainnet build if it's missing |
 | `PRIVATE_KEY` | **local/deploy only** | `scripts/tron/deploy.cjs` | gitignored `.env`; NOT used by the running app |
 
 Rules (also in `.env.local.example`):

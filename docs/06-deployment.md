@@ -60,11 +60,14 @@ contract. Summary:
   **`NEXT_PUBLIC_TRON_NETWORK`** (`mainnet | nile` — REQUIRED; `config.ts` throws at module
   load if missing/unrecognized), optional `NEXT_PUBLIC_WC_PROJECT_ID`.
 - **Local deploy scripts (NOT the app):** `DEPLOY_NETWORK`, `USDT_ADDRESS`, `TREASURY_WALLET`,
-  `EXPECTED_DEPLOYER` (all required, no defaults), optional `MIN_TRX_FLOOR` (default 100 TRX);
-  `verify-e2e.cjs` also takes `PURSERPAY_ADDRESS` + `VERIFY_WALLET` (+ optional `VERIFY_RECIPIENTS`).
+  `EXPECTED_DEPLOYER` (all required, no defaults), optional `MIN_TRX_FLOOR` (default **80 TRX** —
+  above the ~61 TRX real deploy cost, below the owner's ~99.5 TRX mainnet balance; a floor, not a
+  budget); `verify-e2e.cjs` also takes `PURSERPAY_ADDRESS` + `VERIFY_WALLET` (+ optional
+  `VERIFY_RECIPIENTS`).
 - **Server-only:** `SUPABASE_SERVICE_ROLE_KEY`, `WALLET_SALT`, `PII_ENCRYPTION_KEY`,
-  `REFERRALS_ENABLED` (referral kill switch, default off), and optional `TRON_PRO_API_KEY`
-  (lifts TronGrid rate limits for the server-side reads).
+  `REFERRALS_ENABLED` (referral kill switch, default off), and `TRON_PRO_API_KEY` — **optional on
+  Nile, REQUIRED on mainnet** (without it TronGrid throttles the gate's reads → fail-closed for
+  paying customers; `serverRead.ts` throws at boot on a mainnet build if it's missing).
 - **Local deploy only (NOT the running app):** `PRIVATE_KEY` in a gitignored `.env`, read
   by `scripts/tron/deploy.cjs`.
 
@@ -210,8 +213,23 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
    the tx burns only what it uses, so an over-generous value is safe while an under-generous one
    kills a real payroll with `OUT_OF_ENERGY`. Empirical on-chain measurement beats any script;
    the old `measure.cjs` is broken/retired (dead source references) and superseded by this step.
-5. **`TRON_PRO_API_KEY`** — set it (recommended on mainnet to lift TronGrid rate limits for the
-   server-side reads in `serverRead.ts`).
+
+   The Nile rehearsal against the **real** Nile USDT measured **1 recipient = 39,970 energy** and
+   **3 recipients = 113,819** ⇒ **≈36,925/recipient, ≈3,045 base** — the current best mainnet
+   estimate. `ENERGY_PER_RECIPIENT_FRESH = 40_000` sits above it and the 1.5× `FEE_MARGIN` adds
+   more headroom, but confirm against a real mainnet batch.
+
+   > **Dynamic energy (not a constant — record only).** The live chain params show
+   > `getAllowDynamicEnergy = 1` (threshold 5e9, increase factor 2,000, max factor 34,000). TRON's
+   > **per-contract** energy cost is therefore NOT fixed — a heavily-used contract can be charged
+   > progressively more. Irrelevant today (brand-new contract, nowhere near the threshold), but it
+   > means `feeLimitForBatch()` may need re-tuning as usage grows. If a future batch dies
+   > `OUT_OF_ENERGY` despite the margin, this is the first thing to check — it is not a mystery.
+5. **`TRON_PRO_API_KEY` — REQUIRED on mainnet.** Without it, TronGrid rate-limits the gate's
+   server-side reads (`serverRead.ts`), `readSubscriptionActive()` returns null, and the gate
+   fails **closed** — a paying customer sees the paywall on their payday. `serverRead.ts` therefore
+   **throws at boot** on a mainnet build if it's absent (fail loud, never silent). Set it before
+   the mainnet deployment. (Optional on Nile.)
 6. **Treasury custody.** Launch may deploy with `treasuryWallet == EXPECTED_DEPLOYER` (the hot
    key) — an **ACCEPTED** decision (the deploy warns loudly). `updateTreasuryWallet` is the exit:
    move the treasury (and `transferOwnership` the role) to a **cold / multisig** wallet once

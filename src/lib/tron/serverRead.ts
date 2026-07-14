@@ -17,9 +17,18 @@ import {
 // authorization route can read the subscription and re-verify a txid WITHOUT
 // trusting the client (which could lie about either).
 //
-// TRON_PRO_API_KEY is an OPTIONAL server-only var: unnecessary on Nile, but it
-// lifts TronGrid rate limits and is recommended on mainnet. No NEXT_PUBLIC_ prefix
-// — it never reaches the client.
+// TRON_PRO_API_KEY is a server-only var (no NEXT_PUBLIC_ prefix — it never reaches the
+// client). OPTIONAL on Nile; MANDATORY on mainnet. Without it on mainnet, TronGrid
+// rate-limits these reads, readSubscriptionActive() starts returning null, and the gate
+// fails closed — a PAYING customer would be shown the paywall on their payday. So we fail
+// LOUDLY at boot instead of silently at the worst possible moment.
+if (NETWORK.key === "mainnet" && !process.env.TRON_PRO_API_KEY) {
+  throw new Error(
+    "TRON_PRO_API_KEY is REQUIRED on mainnet. Without it TronGrid rate-limits the " +
+      "server-side subscription reads, which fails the payout gate CLOSED for paying " +
+      "customers. Set TRON_PRO_API_KEY in the server environment (no NEXT_PUBLIC_ prefix)."
+  )
+}
 
 let _server: TronWeb | null = null
 

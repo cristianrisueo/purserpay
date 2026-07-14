@@ -56,9 +56,11 @@ const USDT_ADDRESS = requireEnv("USDT_ADDRESS"); // constructor _usdt (immutable
 const TREASURY_WALLET = requireEnv("TREASURY_WALLET"); // constructor _treasuryWallet (initial; owner-updatable)
 const EXPECTED_DEPLOYER = requireEnv("EXPECTED_DEPLOYER"); // signer must equal this
 // Abort if the signer's liquid TRX is below this floor. A failed deploy burns the TRX
-// it consumed AND yields no contract, so we refuse to start under-funded. Default 100
-// TRX (the old Nile deploy of the SMALLER contract burned 56.85 TRX; this one is larger).
-const MIN_TRX_FLOOR = Number(process.env.MIN_TRX_FLOOR || "100");
+// it consumed AND yields no contract, so we refuse to start under-funded. Default 80 TRX:
+// above the real deploy cost (~61 TRX = 58.05 for energy + ~3 bandwidth, measured on the
+// Nile deploy of THIS bytecode), below the owner's mainnet balance (~99.5 TRX). It is a
+// FLOOR, not a budget — override with MIN_TRX_FLOOR if energy prices rise (getEnergyFee).
+const MIN_TRX_FLOOR = Number(process.env.MIN_TRX_FLOOR || "80");
 
 const ARTIFACT = path.join(ROOT, "contracts/out/PurserPay.sol/PurserPay.json");
 const DEPLOY_FEE = 1_500 * L.SUN; // 1,500 TRX ceiling; actual burn far lower (userFeePercentage 100)
@@ -109,8 +111,8 @@ async function main() {
   console.log(`  feeLimit ceiling:            ${L.sunToTrx(DEPLOY_FEE)} TRX (userFeePercentage 100)`);
   console.log(`  min TRX floor:               ${MIN_TRX_FLOOR} TRX`);
   console.log(
-    `  est. cost reference:         ~56.85 TRX (Nile, the SMALLER pre-treasury-update ` +
-      `contract) — expect MORE here (this bytecode is larger)`
+    `  est. cost:                   ~58.05 TRX (580,485 energy × 100 sun) + ~3 TRX bandwidth ` +
+      `≈ 61 TRX — measured on the Nile deploy of THIS bytecode; scales with getEnergyFee`
   );
   console.log("──────────────────────────────────────────────────────────────");
 

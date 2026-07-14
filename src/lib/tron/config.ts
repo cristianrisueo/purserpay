@@ -156,9 +156,10 @@ export const USDT_DECIMALS = 6
 export const BATCH_CAP = 100
 
 // --- feeLimit sizing --------------------------------------------------------
-// ⚠ NILE-MEASURED. Every constant below was measured against the Nile testnet
-// (mock USDT) in the 3B-measure sprint. Mainnet USDT-TRC20 and mainnet energy
-// prices differ, so these are NOT valid for a mainnet payout as-is.
+// ⚠ NILE-MEASURED. The fresh-recipient figures below come from the Nile dress
+// rehearsal against the REAL Nile USDT (Tether USD) — NOT the old mock. Mainnet
+// USDT-TRC20 and mainnet energy prices differ, so these are NOT valid for a
+// mainnet payout as-is.
 //
 // TODO(mainnet-deploy-runbook, docs/06 "Calibrating energy on mainnet"): after the
 // mainnet contract is deployed, run ONE small real batch (2–3 recipients), read the
@@ -171,8 +172,13 @@ export const BATCH_CAP = 100
 // Sizing rationale (unchanged): a fresh (never-funded) recipient costs the most
 // energy; funded recipients ~half. We size feeLimit against the fresh worst case so a
 // batch never dies OUT_OF_ENERGY.
-export const ENERGY_BASE = 3_000 // NILE: per-tx overhead (measured ~2,919)
-export const ENERGY_PER_RECIPIENT_FRESH = 30_300 // NILE: measured ~30,255, rounded up
+// Derived from the Nile rehearsal (real Nile USDT), two data points:
+//   1 recipient  =  39,970 energy   (= BASE + 1×PER)
+//   3 recipients = 113,819 energy   (= BASE + 3×PER)
+//   ⇒ PER ≈ 36,925 · BASE ≈ 3,045
+// The constants below sit safely ABOVE the fit (and FEE_MARGIN adds 1.5× more headroom).
+export const ENERGY_BASE = 3_000 // per-tx overhead; rehearsal fit ~3,045
+export const ENERGY_PER_RECIPIENT_FRESH = 40_000 // fresh recipient; rehearsal fit ~36,925, above it
 export const ENERGY_PRICE_SUN = 100 // NILE energy price (sun per energy) — mainnet differs
 export const FEE_MARGIN = 1.5 // headroom over the fresh estimate
 export const FEE_FLOOR_SUN = 50_000_000 // 50 TRX floor for tiny batches
