@@ -253,25 +253,54 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
 3. **Non-zero-allowance reset — DONE.** `ensureAllowance` (`src/lib/tron/allowance.ts`, wired
    into `disperse.ts` + `subscription.ts`) resets a non-zero-but-short allowance to 0 before
    re-approving (mainnet USDT-TRC20 requires it) and announces the extra prompt. No further work.
-4. **Calibrating energy on mainnet.** The `ENERGY_*` / `feeLimitForBatch()` constants in
-   `config.ts` are **Nile-measured** and NOT valid for mainnet. Do NOT guess. After the mainnet
-   deploy, run **one small real batch (2–3 recipients)**, read the exact energy consumed from
-   Tronscan, and re-tune the constants from that. `feeLimit` is a **ceiling, not a charge** —
-   the tx burns only what it uses, so an over-generous value is safe while an under-generous one
-   kills a real payroll with `OUT_OF_ENERGY`. Empirical on-chain measurement beats any script;
-   the old `measure.cjs` is broken/retired (dead source references) and superseded by this step.
+4. **Calibrating energy on mainnet — by CONSTANT-CALL SIMULATION (no spend).** The `ENERGY_*` /
+   `feeLimitForBatch()` constants in `config.ts` must be calibrated for mainnet or a large batch
+   dies `OUT_OF_ENERGY` mid-payroll. A real 3-recipient batch would need a 150-USDT subscription
+   (the free tier caps at 1 payee) — so we do **not** broadcast. Instead run
+   **`scripts/tron/measure-mainnet.cjs`**: a keyless, read-only script (no `PRIVATE_KEY`, no
+   `sign`, no `sendRawTransaction`) that calls `triggerConstantContract` for
+   `disperse(address,address[],uint256[])` against the live mainnet contract for N = 1, 2, 3, 5,
+   10 and reads back `energy_used`. This is exactly what TronLink uses to quote a fee — no
+   signature, no TRX, no USDT moved.
 
-   The Nile rehearsal against the **real** Nile USDT measured **1 recipient = 39,970 energy** and
-   **3 recipients = 113,819** ⇒ **≈36,925/recipient, ≈3,045 base** — the current best mainnet
-   estimate. `ENERGY_PER_RECIPIENT_FRESH = 40_000` sits above it and the 1.5× `FEE_MARGIN` adds
-   more headroom, but confirm against a real mainnet batch.
+   ```bash
+   MEASURE_WALLET=T... node scripts/tron/measure-mainnet.cjs   # needs TRON_PRO_API_KEY (mainnet)
+   ```
 
-   > **Dynamic energy (not a constant — record only).** The live chain params show
-   > `getAllowDynamicEnergy = 1` (threshold 5e9, increase factor 2,000, max factor 34,000). TRON's
-   > **per-contract** energy cost is therefore NOT fixed — a heavily-used contract can be charged
-   > progressively more. Irrelevant today (brand-new contract, nowhere near the threshold), but it
-   > means `feeLimitForBatch()` may need re-tuning as usage grows. If a future batch dies
-   > `OUT_OF_ENERGY` despite the margin, this is the first thing to check — it is not a mystery.
+   Three constraints the script enforces (get any wrong and the number is worthless):
+   - **Amounts = 1 base unit (0.000001 USDT) per recipient**, not 1 USDT. On TRON energy does NOT
+     scale with the amount — only with whether the recipient's storage slot must be created — so a
+     1-unit batch measures the same energy as a 10,000-USDT batch, and the caller's ~1 USDT covers it.
+   - **Recipients must be FRESH** (addresses that have never held USDT). A fresh recipient costs
+     ~2× (the token writes a brand-new storage slot) — the worst case AND the real case (a new
+     affiliate's virgin wallet). Calibrating against existing holders yields ~half the feeLimit
+     needed, and the payroll dies exactly when new people are added. The script generates 10 fresh
+     keypairs offline, uses only the addresses, and discards the keys. It also simulates N=3 against
+     existing holders so the fresh-vs-existing delta is measured, not assumed.
+   - **The caller needs a standing allowance to PurserPay** — a constant call still runs the real
+     `transferFrom`, which reverts on a zero/short allowance. Approve PurserPay for a small amount
+     ONCE (~1.5 TRX one-time tx) from the measure wallet; the script aborts with instructions if
+     the allowance is zero (never a garbage number).
+
+   The script solves `PER = (energy(10) − energy(1))/9`, `BASE = energy(1) − PER`, sanity-checks
+   linearity against N=2/3/5, and prints the feeLimit @ `BATCH_CAP` (100) with the 1.5×
+   `FEE_MARGIN` in energy AND TRX (× the live `getEnergyFee`). Apply the constants **rounded UP** —
+   `feeLimit` is a **ceiling, never a charge**; over-provisioning costs nothing, under-provisioning
+   kills a payroll, so **when in doubt go high**. Keep the 1.5× margin; relabel the constants
+   MAINNET-measured. (For reference, the Nile rehearsal against real Nile USDT measured ~36,925
+   energy/recipient, ~3,045 base — mainnet USDT is the same Tether logic, so expect a similar figure.)
+
+   **Caveats (the script prints them; do not bury):** (1) a constant call is a SIMULATION, not a
+   receipt — the best estimate without spending, but not a broadcast tx; (2) `getAllowDynamicEnergy
+   = 1` on mainnet, so per-contract energy is NOT constant — a heavily-used contract is charged
+   progressively more; today's number is a **floor, not a law**; (3) re-verify against a REAL
+   receipt the first time a batch runs on mainnet, and re-tune if off. The old `measure.cjs` is
+   broken/retired; this constant-call method supersedes both it and the earlier "run one real batch".
+
+   > **Dynamic energy (record only).** `getAllowDynamicEnergy = 1` (threshold 5e9, increase factor
+   > 2,000, max 34,000): a heavily-used contract can be charged progressively more. Irrelevant today
+   > (brand-new contract, far below the threshold), but if a future batch dies `OUT_OF_ENERGY`
+   > despite the margin, this is the first thing to check — not a mystery.
 5. **`TRON_PRO_API_KEY` — REQUIRED on mainnet.** Without it, TronGrid rate-limits the gate's
    server-side reads (`serverRead.ts`), `readSubscriptionActive()` returns null, and the gate
    fails **closed** — a paying customer sees the paywall on their payday. `serverRead.ts` therefore
