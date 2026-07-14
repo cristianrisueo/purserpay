@@ -82,12 +82,45 @@ async function readBool(contract, funcSig, params, from) {
 const addrParam = (a) => [{ type: "address", value: a }];
 const usdt = (units) => (Number(units) / 1_000_000).toLocaleString("en-US");
 
+// Decode an address returned by a constant call (right-aligned 32-byte word) → base58.
+function addrFromWord(hexWord) {
+  if (!hexWord) return null;
+  return tw.address.fromHex("41" + hexWord.replace(/^0x/, "").slice(-40));
+}
+
 async function main() {
   console.log("──────────────────────────────────────────────────────────────");
   console.log(`E2E — read-only on-chain state (${NET.key})`);
   console.log(`  contract: ${PURSERPAY}`);
   console.log(`  usdt:     ${USDT}`);
   console.log("──────────────────────────────────────────────────────────────");
+
+  // --- CONTRACT CONFIG (immutable usdt + owner surface; the post-deploy read-back) ---
+  // usdt() is THE critical check: it MUST equal the expected USDT_ADDRESS or every
+  // approve/subscribe/disperse reverts and the contract is dead on arrival (unfixable —
+  // usdt is immutable). A mismatch here exits non-zero so a deploy runbook halts loudly.
+  const problems = [];
+  const usdtBack = addrFromWord(await constCall(PURSERPAY, "usdt()", [], WALLET2));
+  const treasuryBack = addrFromWord(await constCall(PURSERPAY, "treasuryWallet()", [], WALLET2));
+  const ownerBack = addrFromWord(await constCall(PURSERPAY, "owner()", [], WALLET2));
+  const priceMonthly = await readUint(PURSERPAY, "SUBSCRIPTION_PRICE()", [], WALLET2);
+  const priceAnnual = await readUint(PURSERPAY, "SUBSCRIPTION_PRICE_ANNUAL()", [], WALLET2);
+
+  const usdtOk = usdtBack === USDT;
+  const treasuryOk = treasuryBack === TREASURY;
+  const monthlyOk = priceMonthly === 150_000_000n;
+  const annualOk = priceAnnual === 1_500_000_000n;
+  if (!usdtOk) problems.push(`usdt() ${usdtBack} != expected ${USDT}`);
+  if (!monthlyOk) problems.push(`SUBSCRIPTION_PRICE() ${priceMonthly} != 150000000`);
+  if (!annualOk) problems.push(`SUBSCRIPTION_PRICE_ANNUAL() ${priceAnnual} != 1500000000`);
+
+  console.log("\nCONTRACT CONFIG");
+  console.log(`  usdt():                     ${usdtBack} ${usdtOk ? "✓" : "✗ MISMATCH — CONTRACT IS DOA"}`);
+  console.log(`  treasuryWallet():           ${treasuryBack} ${treasuryOk ? "✓" : "⚠ != TREASURY_WALLET env"}`);
+  console.log(`  owner():                    ${ownerBack}`);
+  console.log(`  SUBSCRIPTION_PRICE():        ${priceMonthly} ${monthlyOk ? "✓ (150e6)" : "✗"}`);
+  console.log(`  SUBSCRIPTION_PRICE_ANNUAL(): ${priceAnnual} ${annualOk ? "✓ (1500e6)" : "✗"}`);
+  main._problems = problems; // surfaced at the end (after all reads print)
 
   // --- subscription (Wallet 2) ---------------------------------------------
   const active = await readBool(
@@ -128,6 +161,17 @@ async function main() {
   console.log("  TC2 monthly subscribe: Wallet2 -150, Treasury +150, active=true, ~30d");
   console.log("  TC4 disperse 2,500:    Wallet2 -2,500, Luna +500, Marco +1,000, Priya +1,000");
   console.log("  TC5 annual subscribe:  Wallet2 -1,500, Treasury +1,500, expiry ~365d from now");
+
+  // Fail non-zero on a config mismatch so a deploy runbook halts here (esp. usdt()).
+  if (main._problems && main._problems.length) {
+    console.error("\n✗✗✗ CONTRACT CONFIG MISMATCH — DO NOT PROCEED:");
+    for (const p of main._problems) console.error("      " + p);
+    console.error(
+      "    A usdt() mismatch is UNFIXABLE (the token is immutable) — the contract is dead on\n" +
+        "    arrival and must be redeployed. Nothing here can patch it after the fact."
+    );
+    process.exit(1);
+  }
 }
 
 main().catch((e) => {
