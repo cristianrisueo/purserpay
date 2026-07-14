@@ -47,10 +47,13 @@ type NetworkConfig = {
 // subscription fees + the treasury destination — never funds, keys, broadcast, or disperse.
 // Constructor: usdt = TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile USDT, Tether USD, 6dp),
 // treasuryWallet = owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer). Fees at deploy:
-// 150 / 1,500. Deploy tx: 2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d.
+// 150 / 1,500. Deploy tx: 6e3df940ea64fda7699a60812f4d4f0ae334a081801bd4e2b0f23d73a838f307
+// (46.97 TRX / 580,485 energy).
 // (Superseded deploys — do not reuse: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 wrong token;
 // TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x disperse-only; THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c old
-// price 250/2,500; TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY immutable fees.)
+// price 250/2,500; TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY immutable fees;
+// TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG prior bytecode — immutable treasury, before
+// updateTreasuryWallet; deploy tx 2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d.)
 const NILE: NetworkConfig = {
   network: {
     key: "nile",
@@ -59,7 +62,7 @@ const NILE: NetworkConfig = {
     hostMatch: "nile",
     explorer: "https://nile.tronscan.org",
   },
-  purserPay: "TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG",
+  purserPay: "TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX",
   usdt: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
 }
 

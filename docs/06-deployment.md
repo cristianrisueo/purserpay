@@ -107,21 +107,19 @@ build time on purpose.
 
 ### Current Nile deployment (verified in `config.ts` + `sprint_report.txt`)
 
-> ⚠ **Redeploy pending.** The contract live at this address is the **prior bytecode**
-> (immutable `treasuryWallet`, 2,662-byte creation code). The current source adds
-> `updateTreasuryWallet` (2,821 bytes, +159) and therefore needs a **fresh deploy** on both
-> Nile and mainnet (no proxy → new bytecode = new contract). Until Nile is redeployed, its
-> on-chain `treasuryWallet` is still effectively immutable; the *source* and the deploy runbook
-> below are the forward-looking truth.
+The Nile chain now carries the **current bytecode** (owner-updatable `treasuryWallet`,
+2,821-byte creation code) — deployed in the Nile dress rehearsal. **Mainnet is still pending**
+(its `config.ts` block is the fail-closed sentinel until the mainnet deploy runbook lands).
 
 | Thing | Value |
 | --- | --- |
-| `PURSERPAY_ADDRESS` = `DISPERSE_ADDRESS` (same contract) | `TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG` (prior bytecode) |
+| `PURSERPAY_ADDRESS` = `DISPERSE_ADDRESS` (same contract) | `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX` |
 | `USDT_ADDRESS` (Nile USDT, Tether USD, 6 dp) | `TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf` |
-| `treasuryWallet` (storage; owner-updatable in current source) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
+| `treasuryWallet` (storage; owner-updatable) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
 | `owner` (= deployer = Wallet 1 = treasury) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
 | Fees at deploy | `SUBSCRIPTION_PRICE = 150e6`, `SUBSCRIPTION_PRICE_ANNUAL = 1500e6` |
-| Deploy tx | `2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d` |
+| Deploy tx | `6e3df940ea64fda7699a60812f4d4f0ae334a081801bd4e2b0f23d73a838f307` |
+| Deploy cost | 46.97 TRX / 580,485 energy (mainnet projection ~58 TRX at 100 sun/energy — re-check `getEnergyFee` first) |
 
 **Superseded deploys** (kept in the `config.ts` comments as history — do not reuse):
 
@@ -131,6 +129,7 @@ build time on purpose.
 | `TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x` | disperse-only (pre-unification) |
 | `THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c` | old price 250 / 2,500 |
 | `TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY` | immutable fees (before owner-adjustable) |
+| `TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG` | prior bytecode — immutable `treasuryWallet`, before `updateTreasuryWallet` |
 
 ### The fail-closed sentinel
 
