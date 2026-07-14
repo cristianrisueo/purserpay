@@ -262,8 +262,11 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   would desync the client from `serverRead.ts` and let sandbox traffic write into the one
   production Supabase project); network isolation comes from a **separate deployment**
   (prod=mainnet / sandbox=nile, separate Vercel envs + separate Supabase projects). Non-mainnet
-  builds show a persistent SANDBOX banner. Nile is deployed; mainnet is pending (its block is
-  the fail-closed sentinel).
+  builds show a persistent SANDBOX banner. The contract is **deployed on both networks**
+  (mainnet `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`, nile `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX`) and
+  the mainnet address is wired into `config.ts`; the **production Vercel env flip
+  (`NEXT_PUBLIC_TRON_NETWORK=mainnet`) is still pending**, so customers are not on mainnet yet.
+  Mainnet script deploys/reads **require `TRON_PRO_API_KEY`** (keyless mainnet calls 429).
 - Wallets in V1: **TronLink + WalletConnect**. (No Ledger yet.)
 - Pricing: **150 USDT/month or 1,500 USDT/year** (2 months free), paid **on-chain via
   smart contract** — no fiat, no card, no Stripe. Both plans are live. The owner surface is

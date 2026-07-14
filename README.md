@@ -84,7 +84,7 @@ action, zero fear, beauty = trust.
 | Account + compliance | Supabase (Postgres + pgcrypto) |
 | Web3 | tronweb 6 + TronLink (WalletConnect stubbed) |
 | Contract | own `PurserPay.sol` (Foundry) — `disperse` + `subscribe` |
-| Chain | **TRON only**, **USDT (TRC20) only** — network chosen at build time by `NEXT_PUBLIC_TRON_NETWORK` (`mainnet \| nile`); Nile deployed today, mainnet pending |
+| Chain | **TRON only**, **USDT (TRC20) only** — network chosen at build time by `NEXT_PUBLIC_TRON_NETWORK` (`mainnet \| nile`); contract deployed on **both** (mainnet `TLdySJX…`, nile `TK9z…`). The mainnet contract is live + wired; the production Vercel env flip is still pending |
 | Billing | on-chain subscription: **150 USDT/mo** or **1,500 USDT/yr** (no fiat, no Stripe) |
 | Free tier | **1 payee / payer wallet / 30 days**, forever — a mainnet smoke test. Off-chain licence gate ([`docs/07`](./docs/07-freemium-gate.md)); everything else needs the subscription. |
 | Referrals | asymmetric: a paying customer's first-paid referral banks them **one free month** (off-chain credit); the invitee pays full price. Reward == referee cost (**1:1**, self-referral is zero-margin). Behind `REFERRALS_ENABLED` ([`docs/08`](./docs/08-referrals-and-credit.md)). |

@@ -11,7 +11,10 @@
 
 - **App:** Next.js on Vercel. Landing `/` (SSR), dashboard `/dashboard` (client-only).
 - **Chain:** **TRON, selected at BUILD time** by `NEXT_PUBLIC_TRON_NETWORK` (`mainnet | nile`).
-  Nile is deployed today; mainnet is not yet (its block points at the fail-closed sentinel).
+  **Both networks now carry the deployed contract** (mainnet `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`,
+  nile `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX`). The mainnet contract is live on-chain and wired in
+  `config.ts`, but the **production Vercel env flip** (`NEXT_PUBLIC_TRON_NETWORK=mainnet`) is still
+  pending — so customers are not on mainnet yet.
 - **DB:** Supabase (compliance/PII). Roster is device-local (no deploy concern).
 
 ### The two-deployment model (prod vs sandbox)
@@ -108,11 +111,31 @@ network at runtime) was considered and **rejected**. Two fatal reasons:
 **Isolation comes from a separate deployment (see §1), not a switch.** The choice is fixed at
 build time on purpose.
 
-### Current Nile deployment (verified in `config.ts` + `sprint_report.txt`)
+### Mainnet deployment — PRODUCTION contract (verified in `config.ts` + `sprint_report.txt`)
 
-The Nile chain now carries the **current bytecode** (owner-updatable `treasuryWallet`,
-2,821-byte creation code) — deployed in the Nile dress rehearsal. **Mainnet is still pending**
-(its `config.ts` block is the fail-closed sentinel until the mainnet deploy runbook lands).
+The **current bytecode** (owner-updatable `treasuryWallet`, 2,821-byte creation code, identical
+to the Nile-rehearsed contract) is live on TRON mainnet. Read back on-chain post-deploy — every
+value below confirmed via `verify-e2e.cjs`, `usdt()` included (the one immutable that can't be
+fixed after the fact).
+
+| Thing | Value |
+| --- | --- |
+| `PURSERPAY_ADDRESS` = `DISPERSE_ADDRESS` (same contract) | `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha` |
+| `USDT_ADDRESS` (mainnet Tether USD, 6 dp) | `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` |
+| `treasuryWallet` (storage; owner-updatable) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
+| `owner` (= deployer = treasury = HOT key, see §6) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
+| Fees at deploy | `SUBSCRIPTION_PRICE = 150e6`, `SUBSCRIPTION_PRICE_ANNUAL = 1500e6` |
+| Deploy tx | `4f2bca105f5edbc468e3325fc150b2ef87066a439204b853e3c50bc4cf0a92e5` |
+| Deploy cost | **62.71 TRX** / 580,485 energy (58.05 energy fee + net fee, at 100 sun/energy) |
+
+> The deploy broadcast **succeeded** but the script's keyless receipt read-back hit a TronGrid
+> **429** (rate limit), so the address wasn't printed. Root cause + fix: `lib.cjs`/`verify-e2e.cjs`
+> now attach `TRON_PRO_API_KEY` and **require it on mainnet** (`apiKeyHeaders`) — a keyless mainnet
+> deploy/read 429s. Address recovered from the on-chain `CreateSmartContract` tx and verified.
+
+### Nile deployment — SANDBOX environment (verified in `config.ts` + `sprint_report.txt`)
+
+Nile carries the same bytecode (deployed in the dress rehearsal that preceded mainnet).
 
 | Thing | Value |
 | --- | --- |
@@ -122,7 +145,7 @@ The Nile chain now carries the **current bytecode** (owner-updatable `treasuryWa
 | `owner` (= deployer = Wallet 1 = treasury) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
 | Fees at deploy | `SUBSCRIPTION_PRICE = 150e6`, `SUBSCRIPTION_PRICE_ANNUAL = 1500e6` |
 | Deploy tx | `6e3df940ea64fda7699a60812f4d4f0ae334a081801bd4e2b0f23d73a838f307` |
-| Deploy cost | 46.97 TRX / 580,485 energy (mainnet projection ~58 TRX at 100 sun/energy — re-check `getEnergyFee` first) |
+| Deploy cost | 46.97 TRX / 580,485 energy (the mainnet run then cost 62.71 TRX — no staked energy) |
 
 **Superseded deploys** (kept in the `config.ts` comments as history — do not reuse):
 
@@ -139,8 +162,9 @@ The Nile chain now carries the **current bytecode** (owner-updatable `treasuryWa
 `PENDING_DEPLOYMENT_ADDRESS = "T_PENDING_DEPLOYMENT_ADDRESS"` (deliberately not a valid TRON
 address). While `PURSERPAY_ADDRESS` equals it, `isPurserPayDeployed()` is false → the
 subscription gate is fail-closed (paywall shows; an on-chain subscribe surfaces a calm "not
-deployed yet"). It can never silently open. It is currently **not** the sentinel (the
-contract is deployed) — the constant is retained only as the comparison target.
+deployed yet"). It can never silently open. **Both** networks now carry real addresses, so
+neither block points at the sentinel and the gate is **open** on both — the constant is retained
+only as the comparison target (and for a hypothetical future network block shipped before its deploy).
 
 ## 5. Deploying the contract (`scripts/tron/deploy.cjs`)
 
@@ -196,13 +220,14 @@ DEPLOY_NETWORK=nile PURSERPAY_ADDRESS=… USDT_ADDRESS=… TREASURY_WALLET=… V
 
 Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before/at the switch:
 
-1. **Verify the mainnet USDT address.** Real USDT-TRC20 is `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`
-   (verified against Tronscan: Tether USD, USDT, 6 dp). It is the `MAINNET.usdt` block value and
-   the deploy `USDT_ADDRESS`; it **must** equal the contract's `usdt` immutable or every
-   approve/subscribe/disperse reverts.
-2. **Deploy the current source against mainnet USDT.** The `MAINNET.purserPay` block is the
-   fail-closed sentinel until this lands. Run `deploy.cjs` with `DEPLOY_NETWORK=mainnet`, then
-   paste the real address into `config.ts`.
+1. **Verify the mainnet USDT address — DONE.** Real USDT-TRC20 is `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`
+   (verified against Tronscan: Tether USD, USDT, 6 dp, AND read back on-chain as the contract's
+   `usdt()`). It is the `MAINNET.usdt` block value and the deploy `USDT_ADDRESS`; it **must** equal
+   the contract's `usdt` immutable or every approve/subscribe/disperse reverts.
+2. **Deploy the current source against mainnet USDT — DONE.** Deployed at
+   `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha` (tx `4f2bca10…`, 62.71 TRX), wired into the `MAINNET.purserPay`
+   block. Note: mainnet deploys/reads **require `TRON_PRO_API_KEY`** (the scripts attach it and throw
+   without it on mainnet) — a keyless mainnet call 429s (a keyless deploy can 429 mid-broadcast).
 3. **Non-zero-allowance reset — DONE.** `ensureAllowance` (`src/lib/tron/allowance.ts`, wired
    into `disperse.ts` + `subscription.ts`) resets a non-zero-but-short allowance to 0 before
    re-approving (mainnet USDT-TRC20 requires it) and announces the extra prompt. No further work.

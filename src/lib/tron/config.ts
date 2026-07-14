@@ -23,8 +23,9 @@ export type TronNetwork = {
  *  against this — while PURSERPAY_ADDRESS equals it, the subscription gate is
  *  fail-closed (paywall shows; an on-chain subscribe surfaces a calm "not
  *  deployed yet"). It can never silently open. It is not a valid TRON address on
- *  purpose. Nile is deployed (so its block below carries a real address); mainnet
- *  is NOT yet, so the mainnet block points here until the deploy runbook lands. */
+ *  purpose. BOTH Nile and mainnet are now deployed (their blocks below carry real
+ *  addresses), so this is retained only as the comparison target — the gate is open
+ *  on both. Kept for a hypothetical future network block that ships before its deploy. */
 export const PENDING_DEPLOYMENT_ADDRESS: string = "T_PENDING_DEPLOYMENT_ADDRESS"
 
 /** A full per-network configuration. Exactly one is selected at BUILD time by
@@ -66,10 +67,18 @@ const NILE: NetworkConfig = {
   usdt: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
 }
 
-// --- TRON mainnet (NOT yet deployed) ----------------------------------------
-// purserPay stays the fail-closed sentinel until the mainnet deploy runbook sets the
-// real address. usdt is Tether's REAL USDT-TRC20 — verified character-by-character
-// against Tronscan; it MUST equal the deployed contract's `usdt` immutable.
+// --- TRON mainnet (deployed) ------------------------------------------------
+// The unified PurserPay contract (disperse + subscribe). usdt is Tether's REAL USDT-TRC20 —
+// verified char-by-char vs Tronscan AND read back on-chain post-deploy (usdt() == this). It
+// MUST equal the deployed contract's `usdt` immutable. disperse is permissionless + immutable;
+// the owner controls ONLY the subscription fees + treasury destination.
+// Constructor: usdt = TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (Tether USD, 6dp),
+// treasuryWallet = owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer — the HOT key for launch;
+// move to cold/multisig via updateTreasuryWallet later, no redeploy — docs/06 §6). Fees at
+// deploy: 150 / 1,500. Deploy tx: 4f2bca105f5edbc468e3325fc150b2ef87066a439204b853e3c50bc4cf0a92e5
+// (62.71 TRX / 580,485 energy). Was the fail-closed sentinel (PENDING_DEPLOYMENT_ADDRESS) until
+// this deploy. NOTE: the code is wired for mainnet, but the PRODUCTION Vercel env flip
+// (NEXT_PUBLIC_TRON_NETWORK=mainnet) is still pending — customers are not on mainnet yet.
 const MAINNET: NetworkConfig = {
   network: {
     key: "mainnet",
@@ -78,7 +87,7 @@ const MAINNET: NetworkConfig = {
     hostMatch: "api.trongrid",
     explorer: "https://tronscan.org",
   },
-  purserPay: PENDING_DEPLOYMENT_ADDRESS,
+  purserPay: "TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha",
   usdt: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
 }
 
