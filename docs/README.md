@@ -114,10 +114,11 @@ delete the promise, don't build the feature.
   job strictly better: it proves the product with the user's REAL wallet and REAL money (a
   testnet can't), with LESS friction (no "add Nile + find a faucet" step), and without a
   permanent second network configuration exposed to users.
-  This is **not** the same as two things that DO exist and stay: (a) Nile as the *current
-  dev/deploy network* in `src/lib/tron/config.ts`; and (b) the **internal two-deployment model**
-  added for mainnet readiness — a `mainnet` production deployment and a `nile` **sandbox
-  deployment** (separate Vercel envs + separate Supabase projects), selected at build time by
-  `NEXT_PUBLIC_TRON_NETWORK` ([`06`](./06-deployment.md) §1). That sandbox is an *internal
-  engineering environment*, not a customer product feature — the closed decision is not
-  reopened. Only "sandbox as a future product feature" is dead. See [`07`](./07-freemium-gate.md) §1.
+  This is **not** the same as two things that DO exist and stay: (a) Nile as the network used for
+  **local development** in `src/lib/tron/config.ts`; and (b) the **two-environment model**
+  ([`06`](./06-deployment.md) §1) — production (hosted on Vercel: `mainnet` + the production
+  Supabase project) and local development (`nile` + a **local Supabase in Docker**), chosen at
+  build time by `NEXT_PUBLIC_TRON_NETWORK`. A **hosted** nile "sandbox" deployment (its own Vercel
+  env + Supabase project) was ALSO considered and **discarded** — infra for a single user; the
+  local Docker DB gives true isolation with no hosting. Neither the customer-facing sandbox nor a
+  hosted sandbox is coming back. See [`07`](./07-freemium-gate.md) §1.

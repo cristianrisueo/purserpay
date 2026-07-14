@@ -10,7 +10,11 @@
     "lint": "eslint .",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\""
+    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\"",
+    "db:start": "supabase start",
+    "db:stop": "supabase stop",
+    "db:reset": "supabase db reset",
+    "db:status": "supabase status"
   },
   "dependencies": {
     "@fontsource-variable/inter-tight": "^5.2.7",
@@ -51,6 +55,7 @@
     "prettier": "^3.8.3",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "solc": "0.8.20",
+    "supabase": "^2.109.1",
     "typescript": "~6",
     "typescript-eslint": "^8"
   }

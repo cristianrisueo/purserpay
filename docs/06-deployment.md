@@ -17,34 +17,56 @@
   pending — so customers are not on mainnet yet.
 - **DB:** Supabase (compliance/PII). Roster is device-local (no deploy concern).
 
-### The two-deployment model (prod vs sandbox)
+### The two-environment model (production vs local development)
 
-Network isolation comes from **two separate deployments**, never a runtime switch:
+There is exactly **one hosted environment** (production) and one **local** environment. The
+network seam (`NEXT_PUBLIC_TRON_NETWORK`) is the only lever; there is no runtime toggle.
 
-| | **Production** | **Sandbox** |
+| | **Production** (hosted) | **Local development** (your machine) |
 | --- | --- | --- |
 | `NEXT_PUBLIC_TRON_NETWORK` | `mainnet` | `nile` |
-| Vercel env | production project/env | a separate preview/project |
-| Supabase | **its own project** | **a separate project** |
+| Where | Vercel | `npm run dev` on localhost |
+| Supabase | the production project (cloud) | **local Supabase (Docker)**, `npm run db:start` |
 | Sandbox banner | not rendered (DCE) | shown on every page |
 
-**Both the Vercel env AND the Supabase project must be separate.** Supabase is one project per
-deployment because `free_tier_usage` / `referral_accounts` / `payout_challenges` are keyed on
-`wallet_hash` with **no network dimension** — a shared project would let sandbox (Nile) traffic
-write straight into the production tables. This is an *internal deployment environment*, and is
-**not** the discarded *customer-facing testnet sandbox product* (that stays discarded — see
-[`07`](./07-freemium-gate.md) §1 and [`README.md`](./README.md)); it is a different thing.
+**Local dev runs against a local Supabase, NOT the production project and NOT a second cloud
+project.** The isolation is **physical, not disciplinary**: with a local instance, touching
+production is *impossible*, not merely "don't mistype the URL". This matters because the
+compliance tables (`free_tier_usage` / `referral_accounts` / `payout_challenges` /
+`billing_profiles`) key on `wallet_hash` with **no network/environment dimension** — so a testnet
+payout on localhost, pointed at production, would write into the very rows a mainnet customer
+will use (and see [`04`](./04-compliance-and-encryption.md) §5: a shared `WALLET_SALT` would make
+the hashes collide even across separate databases — dev uses a **fresh, distinct** salt).
+
+> **There is NO public/hosted "sandbox" deployment.** A hosted Nile deployment (its own Vercel
+> env + its own Supabase project) was considered and **discarded** — it is infrastructure for a
+> single user; the local Docker environment does the same job with zero hosting and true
+> isolation. This is distinct from, and in addition to, the long-discarded *customer-facing
+> testnet-sandbox product* (see [`07`](./07-freemium-gate.md) §1). The only sandbox is local dev.
 
 ## 2. Local dev
 
 ```bash
 npm install
-cp .env.local.example .env.local     # then fill in the values (see below)
-npm run dev                          # Next dev server
+cp .env.local.example .env.local     # use the LOCAL DEVELOPMENT block (points at local Supabase)
+npm run db:start                     # boot local Supabase (Docker) — applies migrations 0001–0004
+npm run dev                          # Next dev server (localhost = nile + local Supabase)
 npm run typecheck                    # tsc --noEmit
 npm run build                        # production build (14 routes)
 npm run lint                         # eslint
 ```
+
+Local database (Supabase CLI + Docker — a **devDependency**, not a runtime dep):
+
+```bash
+npm run db:start                     # start the local stack (prints URL + keys)
+npm run db:status                    # show URL + anon/service keys again
+npm run db:reset                     # re-apply all migrations to an EMPTY db (from-scratch test)
+npm run db:stop                      # stop the local stack
+```
+
+Requires Docker running. `db:reset` is also the proof the migrations apply cleanly, in order,
+against a virgin database.
 
 Contracts (Foundry):
 

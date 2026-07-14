@@ -259,10 +259,14 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   build for or promise Base/Arbitrum/etc. The network (`mainnet | nile`) is selected at
   **build time** by `NEXT_PUBLIC_TRON_NETWORK` — `config.ts` holds both blocks and **throws**
   if the var is missing/unrecognized (fail closed). There is **no runtime network toggle** (it
-  would desync the client from `serverRead.ts` and let sandbox traffic write into the one
-  production Supabase project); network isolation comes from a **separate deployment**
-  (prod=mainnet / sandbox=nile, separate Vercel envs + separate Supabase projects). Non-mainnet
-  builds show a persistent SANDBOX banner. The contract is **deployed on both networks**
+  would desync the client from `serverRead.ts` and let dev traffic write into the one
+  production Supabase project). There are exactly **two environments**: **production** (hosted on
+  Vercel, `mainnet` + the production Supabase project) and **local development** (`nile` + a
+  **local Supabase (Docker)**, `npm run db:start`). There is **no hosted/public sandbox
+  deployment** (a nile Vercel env with its own Supabase project was considered and discarded —
+  infra for a single user; the local Docker DB does it with true, physical isolation). Non-mainnet
+  builds show a persistent SANDBOX banner. Local dev's `WALLET_SALT` **must differ** from
+  production's or the wallet hashes collide (see docs/04 §5). The contract is **deployed on both networks**
   (mainnet `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`, nile `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX`) and
   the mainnet address is wired into `config.ts`; the **production Vercel env flip
   (`NEXT_PUBLIC_TRON_NETWORK=mainnet`) is still pending**, so customers are not on mainnet yet.
@@ -325,12 +329,12 @@ any server-side storage of the **roster** (encrypted account PII lives server-si
 does not) · **a customer-facing testnet sandbox / demo / trial environment** (discarded, not
 deferred — the mainnet free tier does its job better; see docs/07 §1 and the "Discarded" list in
 docs/README.md). NOTE: this discarded item is a *customer product feature* — it is **not** the
-same as the **internal two-deployment model** (a `mainnet` prod deployment + a `nile` sandbox
-deployment, separate Vercel envs + separate Supabase projects, chosen by
-`NEXT_PUBLIC_TRON_NETWORK`) added for mainnet readiness. That internal engineering environment
-exists and stays; the closed customer-sandbox decision is not reopened. · **a runtime network
-toggle** (rejected — desyncs client from server and cross-writes the production Supabase; see
-docs/06 §4).
+same as the two real **environments**: production (hosted: `mainnet` + prod Supabase) and local
+development (`nile` + a local Supabase in Docker, chosen by `NEXT_PUBLIC_TRON_NETWORK`). A
+**hosted** nile "sandbox" deployment (its own Vercel env + Supabase project) was ALSO considered
+and discarded (infra for a single user) — the local Docker DB gives the same isolation with no
+hosting. · **a runtime network toggle** (rejected — desyncs client from server and cross-writes
+the production Supabase; see docs/06 §4).
 
 The **free tier** (1 payee / 30 days) and **off-chain referral credit** ARE shipped — they are
 *not* on this list; see STANDING FACTS. If you think you need one of the above, you don't —

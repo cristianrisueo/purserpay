@@ -144,9 +144,29 @@ Rules (also in `.env.local.example`):
 - `src/lib/supabase/server.ts` imports `"server-only"` — a **build-time** guarantee: if any
   client component (directly or transitively) imports it, the build fails. Belt-and-
   suspenders on top of the missing `NEXT_PUBLIC_` prefix.
-- Generate secrets with e.g. `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+- Generate secrets with e.g. `openssl rand -hex 32` (or the Node one-liner
+  `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`).
 - `WALLET_SALT` and `PII_ENCRYPTION_KEY` are **effectively permanent** once compliance data
   exists — rotating either is a data-migration event, not a config tweak.
+
+### Local vs production environments (physical isolation)
+
+Local development runs against a **local Supabase (Docker)** — never the production project.
+`npm run db:start` boots it; `.env.local` points `NEXT_PUBLIC_SUPABASE_URL` /
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` at `http://127.0.0.1:54321`
+(the values `supabase status` prints — the local anon/service keys are the well-known local
+demo JWTs, not secrets). The `.env.local.example` **LOCAL DEVELOPMENT** block is a ready-to-copy
+starting point.
+
+> **⚠ `WALLET_SALT` must DIFFER between environments — this is a correctness invariant, not a
+> preference.** The compliance tables (`free_tier_usage`, `referral_accounts`,
+> `payout_challenges`, `billing_profiles`) key on `wallet_hash = hash(address, WALLET_SALT)` with
+> **no network/environment dimension**. If dev and production share a `WALLET_SALT`, the hashes
+> **collide**: a testnet payout on localhost computes the *same* `wallet_hash` a mainnet customer
+> will — so even against a *separate database* it targets what would be a real customer's row
+> (burning a free-tier slot, consuming a referral credit month, spending a challenge nonce). The
+> physical isolation (a separate local DB) protects you; a **fresh, distinct dev `WALLET_SALT`** is
+> the second, independent guarantee. Never copy production's salt into `.env.local`.
 
 ## 6. GDPR — dissociation + Art. 17 erasure
 

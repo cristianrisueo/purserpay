@@ -112,15 +112,23 @@ docs/             # ← architectural source of truth (start here)
 
 ```bash
 npm install
-cp .env.local.example .env.local      # fill in values — see docs/04 §5
-npm run dev                           # http://localhost:3000
+cp .env.local.example .env.local      # use the LOCAL DEVELOPMENT block — see docs/04 §5
+npm run db:start                      # local Supabase (Docker) — required before dev; needs Docker running
+npm run dev                           # http://localhost:3000  (localhost = nile + local Supabase)
 
 npm run typecheck                     # tsc --noEmit
 npm run build                         # production build
 npm run lint
 
+npm run db:reset                      # re-apply migrations to an empty local db
+npm run db:stop                       # stop local Supabase
+
 cd contracts && forge build && forge test -vv   # 30 tests (29 unit + 1 invariant)
 ```
+
+**Local development runs against a local Supabase (Docker), never the production project** — so
+a testnet payout on localhost can't touch a real customer's row. See
+[`docs/06`](./docs/06-deployment.md) §1.
 
 Environment variables are documented in `.env.local.example` and
 [`docs/04`](./docs/04-compliance-and-encryption.md). One is **required at build time**:
