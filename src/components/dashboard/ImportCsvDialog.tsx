@@ -89,7 +89,9 @@ export function ImportCsvDialog({ rosterCount, onImport }: ImportCsvDialogProps)
   }, [table, mapping, missingFields, collision])
 
   async function handleConfirm() {
-    if (!mappingResult?.ok) return
+    // Never clear-then-import-nothing: if every row was held back as a duplicate
+    // there are no uniques to write, so there's nothing to confirm.
+    if (!mappingResult?.ok || mappingResult.rows.length === 0) return
     setImporting(true)
     await onImport(mappingResult.rows)
     setImporting(false)
@@ -195,7 +197,11 @@ export function ImportCsvDialog({ rosterCount, onImport }: ImportCsvDialogProps)
             <Button
               type="button"
               variant={isDestructive ? "destructive" : "default"}
-              disabled={!mappingResult?.ok || importing}
+              disabled={
+                !mappingResult?.ok ||
+                mappingResult.rows.length === 0 ||
+                importing
+              }
               onClick={handleConfirm}
               className="flex-1"
             >

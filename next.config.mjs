@@ -8,6 +8,13 @@ const nextConfig = {
   // This makes the SSR crash impossible regardless of which module pulls tronweb in.
   // Server-only — the client bundle (Buffer/process polyfills below) is unaffected.
   serverExternalPackages: ["tronweb"],
+  // The Flex Card (1C) renders with next/og + a VENDORED static Inter Tight woff read
+  // from src/lib/affiliate/fonts. Trace those files into the /api/affiliate/flex
+  // serverless function so process.cwd()-relative readFileSync resolves in production
+  // (they aren't imported as modules, so Next wouldn't bundle them otherwise).
+  outputFileTracingIncludes: {
+    "/api/affiliate/flex": ["./src/lib/affiliate/fonts/*.woff"],
+  },
   // Baseline security headers on every route (clickjacking, MIME-sniffing, referrer
   // leakage, and HTTPS enforcement). Applied at the framework level so they cover the
   // landing, the gated dashboard, and static assets alike.

@@ -106,6 +106,8 @@ src/
 │   ├── dashboard/page.tsx       # "/dashboard" (client-only, ssr:false) → views/Dashboard
 │   ├── legal/page.tsx           # legal copy
 │   ├── privacy/page.tsx         # privacy copy
+│   ├── portal/page.tsx          # "/portal" (client-only, ssr:false) — payee affiliate receipt portal (docs/09)
+│   ├── verify/[txid]/page.tsx   # "/verify" — public, read-only receipt verification (server component)
 │   ├── actions/compliance.ts    # "use server" — OFAC + PII (service-role Supabase)
 │   ├── r/[code]/route.ts        # referral attribution — set pp_ref cookie, 302 to /
 │   └── api/
@@ -113,9 +115,14 @@ src/
 │       │   ├── challenge/route.ts #   Gate 0: mint a single-use wallet-control challenge
 │       │   ├── authorize/route.ts #   proof + OFAC + subscription + referral credit + free-tier
 │       │   └── release/route.ts    #   free-tier refund (on-chain re-verify, fail-closed)
-│       └── referral/           # ROUTE HANDLERS — the referral loop
-│           ├── claim/route.ts   #   verify subscribe tx + grant referrer a credit month
-│           └── summary/route.ts #   card data + freeMode credit parity (lazy code gen)
+│       ├── referral/           # ROUTE HANDLERS — the referral loop
+│       │   ├── claim/route.ts   #   verify subscribe tx + grant referrer a credit month
+│       │   └── summary/route.ts #   card data + freeMode credit parity (lazy code gen)
+│       └── affiliate/          # ROUTE HANDLERS — the payee portal (docs/09)
+│           ├── record/route.ts  #   record a confirmed disperse (public txid → hashed receipt index)
+│           ├── portal/route.ts  #   signature-gated receipt read (purpose="portal")
+│           ├── receipt/route.ts #   per-receipt PDF proof-of-funds (fresh sig per download)
+│           └── flex/route.ts    #   shareable Flex Card image (next/og)
 ├── views/
 │   ├── Landing.tsx              # single-page IA: #why → #how → #pricing → FAQ
 │   └── Dashboard.tsx            # route guard + wires usePayout to the components
@@ -130,8 +137,11 @@ src/
 │   ├── payout/                  # wallet-control challenge (Gate 0): challengeMessage/Verify (pure) · challenge (server) · challengeClient
 │   ├── freeTier/                # gate.ts (pure decision) · quota.ts · refund.ts · authorizeClient.ts
 │   ├── referral/                # code.ts (opaque CSPRNG) · accounts.ts (server) · config.ts (kill switch) · claimClient.ts
+│   ├── security/                # pre-flight (S-2/S-3): blacklist.ts · exchangeDetect.ts · previewBatch.ts · preflightView.ts
+│   ├── affiliate/               # payee portal (docs/09): receipts · recordClient · portalClient · receiptPdf · auditId · verify · flexModel · flexCard · fonts/
 │   ├── db.ts                    # Dexie schema (payees, payments, meta)
 │   ├── roster.ts                # roster CRUD + atomic CSV replace
+│   ├── rosterDedupe.ts          # unique-address invariant (retain-not-discard) — single source of truth
 │   ├── receipts.ts              # receipt persistence + green-cycle logic
 │   ├── receiptPdf.ts            # local print-to-PDF receipts/reports
 │   ├── crypto.ts                # hashWalletAddress (salted SHA-256) — pure, no secret
@@ -144,16 +154,18 @@ src/
 │       ├── wallet.ts            # WalletProvider interface (TronLink real, WC stub)
 │       ├── validation.ts        # the ✓/✓✓ double-check + privacy invariant
 │       ├── disperse.ts          # approve → disperse money path (atomic batches)
+│       ├── allowance.ts         # ensureAllowance — mainnet non-zero-allowance reset before re-approve
 │       ├── subscription.ts      # on-chain subscription gate (fail-closed)
 │       ├── serverRead.ts        # SERVER-only keyless reads (sub + txid + signer recover) for the gate
 │       │                        #   route handlers — never signs, non-custodial
+│       ├── disperseCalldata.ts  # pure ABI decoder for disperse calldata (feeds the receipt index)
 │       ├── abi.ts               # minimal ABIs + custom-error selector table
 │       ├── amount.ts            # human ↔ base-unit conversion (exact)
 │       └── errors.ts            # PurserError + revert decoding → calm messages
 ├── styles/globals.css           # Tailwind v4 CSS-first entry + fonts
 contracts/                       # Foundry project (PurserPay.sol + tests)
 scripts/tron/                    # deploy / verify / measure (Node .cjs)
-supabase/migrations/             # 0001 compliance · 0002 free tier · 0003 referrals · 0004 payout challenges
+supabase/migrations/             # 0001 compliance · 0002 free tier · 0003 referrals · 0004 payout challenges · 0005 affiliate portal · 0006 receipt audit
 ```
 
 Full module responsibilities live in the per-topic docs; this table is the "where do I

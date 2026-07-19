@@ -14,12 +14,22 @@ nothing**:
 
 - **`disperse()`** — a **free**, permissionless batch-payout utility. USDT moves straight
   payer → each recipient via `transferFrom`; no fee, no percentage, no retained funds.
-  This is the compliance moat: Purser has zero control over user funds.
+  This is the compliance moat: Purser has zero control over user funds. It also carries the
+  **frozen-address guard** (S-1) — real USDT lets a transfer to a Tether-blacklisted address
+  **succeed and trap the funds forever**, so `disperse` reads the blacklist in the same frame
+  and reverts the whole batch. It is **USDT-only**: `token` must equal the immutable `usdt`.
 - **`subscribe(planType)`** — the flat monetization. Pulls **exactly** the plan's current
   price from the subscriber and forwards it, in the same transaction, to a cold treasury.
 
-Zero external Solidity dependencies: `ITRC20` is declared inline and ownership is inline
-(no OpenZeppelin import), matching the pure-Foundry / forge-std-only build.
+Zero external Solidity dependencies: `ITRC20` (transfer selector) and `IUsdt` (the
+`getBlackListStatus` view the guard reads) are declared inline and ownership is inline (no
+OpenZeppelin import), matching the pure-Foundry / forge-std-only build.
+
+> **⚠ The S-1 guard changed the bytecode — a mainnet REDEPLOY (S-4) is now required.** This
+> sprint **builds and tests** the guard only; it does **not** deploy. Today's mainnet contract
+> (`TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`) is **superseded once S-4 runs**, and
+> `feeLimitForBatch()` / `ENERGY_*` must be **re-measured with the guard included** at deploy
+> (see [`06`](./06-deployment.md)). The non-custodial invariant is unchanged.
 
 ## 2. Invariant & ownership model
 
@@ -66,6 +76,7 @@ the role. See [`02-non-custodial.md`](./02-non-custodial.md) for how this reconc
 | `usdt` never changes | `immutable`, set in constructor, zero-address-guarded (`ZeroAddressConfig`). |
 | `treasuryWallet` moves ONLY via `updateTreasuryWallet` (owner) | storage, zero-address-guarded; receives our own fee only, never in `disperse()`, so it can never reach user funds/custody. |
 | `disperse` is permissionless & immutable | no `onlyOwner`, no fee, no subscription check; logic can't be upgraded (no proxy). |
+| `disperse` moves **only** `usdt`, and never pays a **frozen** address | first line reverts `UnsupportedToken` if `token != usdt`; then it reverts `SenderBlacklisted` (payer) / `DestinationBlacklisted` (any recipient) by reading `IUsdt(usdt).getBlackListStatus` in the same tx. Atomic — a frozen row rolls back the whole batch. Purser still never holds funds; the guard only *rejects*, never redirects. |
 | The **free tier is NOT and CANNOT be enforced on-chain** | `disperse` gates nothing — the 1-payee/30-day free tier is an OFF-CHAIN licence gate in `/api/payout/authorize`, exactly like OFAC. A direct TronWeb `disperse()` bypasses it (accepted). Do **not** add a gate to `disperse`. → [`07`](./07-freemium-gate.md) |
 | You can't subscribe by paying less/more | `subscribe` reads the price **live from storage** and pulls exactly it; a short balance/allowance reverts the whole tx. |
 | No fee lock-out | `transferOwnership` guards the zero address; there is **no renounce**. |
@@ -97,7 +108,7 @@ initializes fees to `150e6 / 1500e6`.
 
 | Function | Access | Effect |
 | --- | --- | --- |
-| `disperse(address token, address[] recipients, uint256[] amounts)` | permissionless | Atomic batch pay. Guards: `LengthMismatch`, `EmptyBatch`, per-index `ZeroAddressRecipient`/`ZeroAmount`; `_safeTransferFrom` each; emits `Dispersed(payer, token, count, total)`. All-or-nothing. |
+| `disperse(address token, address[] recipients, uint256[] amounts)` | permissionless | Atomic batch pay. Guards, in order: `UnsupportedToken` (`token` must equal the immutable `usdt`), `LengthMismatch`, `EmptyBatch`, `SenderBlacklisted` (payer, once), then per row `ZeroAddressRecipient`/`ZeroAmount`/`DestinationBlacklisted` before `_safeTransferFrom`; emits `Dispersed(payer, token, count, total)`. All-or-nothing — a frozen row reverts the whole batch. |
 | `subscribe(uint8 planType)` | any caller | Reads price/period for plan 0 or 1 (`InvalidPlan` otherwise); writes `expiry = now + period` (CEI); `_safeTransferFrom(usdt, caller, treasury, price)`; emits `SubscriptionPaid`. |
 | `isSubscriptionActive(address) view` | view | `subscriptionExpiresAt[account] > block.timestamp`. |
 | `updateSubscriptionFees(uint256 newMonthly, uint256 newAnnual)` | `onlyOwner` | Sets both prices; emits `SubscriptionFeesUpdated`. Applies to every subsequent `subscribe`; existing subs and `disperse` untouched. |
@@ -108,6 +119,13 @@ initializes fees to `150e6 / 1500e6`.
 > **Known behavior (per spec):** `updateSubscriptionFees` has **no bounds** — the owner
 > could set a fee to 0 (a free period; `transferFrom` of 0 succeeds). Intentional
 > flexibility; no floor/ceiling validation. Flag if bounds are ever wanted.
+
+> **Pre-flight preview mirrors this guard (S-2, advisory).** The dashboard's pre-flight
+> (`src/lib/security/previewBatch.ts` + `readDestinationBlacklist`) classifies rows in the SAME
+> order this `disperse` guard enforces — sender-frozen first, then per-row destination-frozen — so
+> preview and execution never disagree. It is **advisory only** and **fail-safe** (a failed
+> blacklist read is `UNVERIFIED`, never safe — D-7); THIS on-chain guard is the authoritative
+> guarantee at sign time. See [`03` §3b](./03-data-flow.md).
 
 > **Frontend note:** **both** plans are live and reachable. The shared `SubscribeDialog`
 > (`src/components/dashboard/SubscribeDialog.tsx`) carries a plan selector, so the dashboard
@@ -133,11 +151,15 @@ initializes fees to `150e6 / 1500e6`.
 
 **Errors:** `LengthMismatch`, `EmptyBatch`, `ZeroAddressRecipient(index)`,
 `ZeroAmount(index)`, `TransferFailed(token, from, to, amount)`, `ZeroAddressConfig`,
-`InvalidPlan(planType)`, `NotOwner`.
+`InvalidPlan(planType)`, `NotOwner`, and the S-1 frozen-address guard:
+`UnsupportedToken(token)` (`0xbf16aab6`), `DestinationBlacklisted(dest)` (`0xf88cff82`),
+`SenderBlacklisted(sender)` (`0x578f3e13`).
 
 > The `disperse`/`Dispersed`/four-guard **selectors are byte-for-byte preserved** from the
 > prior `PurseDisperseUsdt` contract, so the frontend's positional call and revert-decoding
-> keep working across the rename to PurserPay.
+> keep working across the rename to PurserPay. The three S-1 selectors are keccak-derived and
+> already registered in `abi.ts` (`ERROR_SELECTORS`); they are **not mined on-chain until S-4
+> deploys** the guarded bytecode.
 
 ## 6. ABI ↔ frontend mapping (`src/lib/tron/abi.ts`)
 
@@ -172,11 +194,15 @@ bytecode; there is no re-compile at deploy time. See [`06-deployment.md`](./06-d
 
 ## 8. Tests (`contracts/test/PurserPay.t.sol`)
 
-**30 tests: 29 unit + 1 stateful invariant.** Run with `cd contracts && forge test -vv`.
+**36 tests: 35 unit + 1 stateful invariant.** Run with `cd contracts && forge test -vv`.
 
 Coverage includes: constructor immutables + owner grant; disperse happy-path,
-length/empty/zero guards, atomicity, non-compliant-token handling; subscribe for both
-plans, exact-price pull, `InvalidPlan`, expiry math; the owner surface
+length/empty/zero guards, atomicity, non-compliant-token handling; **the S-1 frozen-address
+guard** — `UnsupportedToken` (non-`usdt` token), `DestinationBlacklisted` (single frozen
+recipient; one-frozen-row-among-many reverts the WHOLE batch, no partial payout),
+`SenderBlacklisted` (frozen payer), live-state re-check (freeze→unfreeze restores payment),
+and a **void-return `transferFrom`** disperse driven through the faithful USDT mock; subscribe
+for both plans, exact-price pull, `InvalidPlan`, expiry math; the owner surface
 (`updateSubscriptionFees` updates + charges the new price, `NotOwner` reverts,
 `transferOwnership` hand-off + zero-address guard); and **`updateTreasuryWallet`** (owner
 redirects the treasury → a subsequent `subscribe` pays the NEW treasury and not the old

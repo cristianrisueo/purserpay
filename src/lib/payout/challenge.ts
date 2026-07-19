@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto"
 import { hashWalletAddress } from "@/lib/crypto"
 import { createSupabaseServiceClient } from "@/lib/supabase/server"
 import { addressToHexLower, recoverMessageSigner } from "@/lib/tron/serverRead"
-import { buildChallengeMessage } from "./challengeMessage"
+import { buildChallengeMessage, type ChallengePurpose } from "./challengeMessage"
 import { verifyWalletControl, type ChallengeVerifyResult } from "./challengeVerify"
 
 /** How long a minted challenge is valid. Short — it exists only to bridge the one
@@ -54,8 +54,15 @@ export type IssuedChallenge = {
  * The message embeds the same `expiresAt.toISOString()` the verify step
  * reconstructs from the stored `timestamptz`, so the signed bytes match by
  * construction. Throws on a DB error (the route surfaces a calm 503).
+ *
+ * `purpose` selects the message heading (payout | portal) — the SAME nonce row and
+ * TTL either way (the challenge table is purpose-agnostic; the purpose lives only in
+ * the signed bytes). Defaults to "payout" so the existing gate is unchanged.
  */
-export async function issueChallenge(address: string): Promise<IssuedChallenge> {
+export async function issueChallenge(
+  address: string,
+  purpose: ChallengePurpose = "payout"
+): Promise<IssuedChallenge> {
   const nonce = randomBytes(32).toString("hex")
   // ms-precision instant — round-trips through timestamptz and back to the same
   // canonical ISO string at verify time (the drift-guard).
@@ -72,7 +79,7 @@ export async function issueChallenge(address: string): Promise<IssuedChallenge> 
 
   return {
     nonce,
-    message: buildChallengeMessage(address, nonce, expiresAt),
+    message: buildChallengeMessage(address, nonce, expiresAt, purpose),
     expiresAt,
   }
 }
@@ -106,18 +113,24 @@ async function consumePayoutChallenge(
  * and confirm the signature recovers `address`. Returns the pure
  * `verifyWalletControl` result ({ ok } | { ok:false, reason }); the route maps a
  * non-ok to 403 and NEVER reaches OFAC / subscription / quota / credit.
+ *
+ * `purpose` MUST match the value the challenge was ISSUED with — the reconstructed
+ * message (and therefore the recovered signer) depends on it. A portal signature
+ * verified against the payout purpose (or vice versa) recovers the wrong signer and
+ * is rejected as signer_mismatch. Defaults to "payout".
  */
 export async function verifyChallenge(
   address: string,
   nonce: string,
-  signature: string
+  signature: string,
+  purpose: ChallengePurpose = "payout"
 ): Promise<ChallengeVerifyResult> {
   return verifyWalletControl(
     { address, nonce, signature },
     {
       hash: challengeWalletHash,
       consume: consumePayoutChallenge,
-      buildMessage: buildChallengeMessage,
+      buildMessage: (a, n, e) => buildChallengeMessage(a, n, e, purpose),
       recoverSigner: recoverMessageSigner,
       toHex: addressToHexLower,
     }

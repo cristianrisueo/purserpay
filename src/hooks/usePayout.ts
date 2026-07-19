@@ -5,6 +5,12 @@ import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useLiveQuery } from "dexie-react-hooks"
 
 import { storeBillingProfile, verifyRosterCompliance } from "@/app/actions/compliance"
+import { readBatchBlacklist } from "@/app/actions/preflight"
+import { recordDisperse } from "@/lib/affiliate/recordClient"
+import { type BlacklistStatus } from "@/lib/security/blacklist"
+import { classifyAddress } from "@/lib/security/exchangeDetect"
+import { previewBatch } from "@/lib/security/previewBatch"
+import { hasBlockingRow, summarizePreflight } from "@/lib/security/preflightView"
 import { authorizePayout, releasePayout } from "@/lib/freeTier/authorizeClient"
 import { FREE_TIER_COOLDOWN_MS } from "@/lib/freeTier/gate"
 import { proveWalletControl } from "@/lib/payout/challengeClient"
@@ -317,6 +323,20 @@ export function usePayout() {
     return m
   }, [roster, levelFor])
 
+  // --- Exchange advisory (pure, ALWAYS live — no network) -----------------
+  // classifyAddress is a pure, instant lookup against the in-repo exchange list (S-2), so unlike
+  // the rate-limited blacklist read it can surface proactively on every roster change. Drives the
+  // amber "Exchange?" chip and the banner's exchange count BEFORE any pay-time read. Advisory only
+  // (S-2 GAP: tagged addresses, not per-user deposit addresses) — the disclaimer stays generic.
+  const rowExchange = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of roster) {
+      const match = classifyAddress(p.address)
+      if (match.isExchange && match.exchange) m.set(p.id, match.exchange)
+    }
+    return m
+  }, [roster])
+
   // A row is blocked (can't be paid, must be surfaced) if its address is invalid
   // or its amount can't be represented exactly in USDT base units.
   const rowBlocked = useMemo(() => {
@@ -435,6 +455,61 @@ export function usePayout() {
   const [batchPhase, setBatchPhase] = useState<BatchPhase>({ kind: "idle" })
   const [payError, setPayError] = useState<PurserError | null>(null)
   const paying = batchPhase.kind !== "idle"
+
+  // --- Frozen-address pre-flight (S-3, ADVISORY; the on-chain guard is the guarantee) -----
+  // The blacklist read is a rate-limited TronGrid round-trip, so it runs at PAY-INITIATION
+  // (not per render). We ACCUMULATE what we've learned per ADDRESS across reads (so paying one
+  // clean row never erases the frozen badges a prior Pay-all surfaced) and clear the whole map
+  // when the roster's addresses change (a removed/edited frozen row can't keep a stale red badge).
+  // `preflightChecking` is the in-flight neutral "checking" state (D-7 — a row is never assumed
+  // safe while a read is pending).
+  const [blacklistByAddress, setBlacklistByAddress] = useState<
+    Map<string, BlacklistStatus>
+  >(new Map())
+  const [preflightChecking, setPreflightChecking] = useState(false)
+  // The exchange accept-and-pay gate: the rows to disclaim, non-null while the dialog is open.
+  const [exchangeConfirm, setExchangeConfirm] = useState<
+    { rows: { address: string; exchange?: string }[] } | null
+  >(null)
+  // The pending batch awaiting the exchange confirmation's "Continue".
+  const pendingPayRef = useRef<Payee[] | null>(null)
+  // Frozen ids of the just-checked batch, mirrored synchronously so the sign-time guard reads a
+  // fresh value without an async state round-trip (Task 4: a frozen batch can never sign).
+  const rowFrozenRef = useRef<Set<string>>(new Set())
+
+  // Per-row frozen / unverified maps for the badges, derived from the accumulated readings.
+  const { rowFrozen, rowUnverified } = useMemo(() => {
+    const frozen = new Map<string, true>()
+    const unverified = new Set<string>()
+    for (const p of roster) {
+      const st = blacklistByAddress.get(p.address)
+      if (st === "FROZEN") frozen.set(p.id, true)
+      else if (st === "UNVERIFIED") unverified.add(p.id)
+    }
+    return { rowFrozen: frozen, rowUnverified: unverified }
+  }, [roster, blacklistByAddress])
+
+  // A roster address change invalidates every frozen/unverified reading.
+  useEffect(() => {
+    setBlacklistByAddress(new Map())
+    rowFrozenRef.current = new Set()
+  }, [addressesKey])
+
+  // The contextual banner's summary over the SELECTED batch. Exchange is pure/always-live; frozen
+  // and unverified are known only after a pay-time read (0 until then). Each flagged row lands in
+  // exactly one bucket (frozen > unverified > exchange), so a clean/unchecked batch → anything:false
+  // → no banner (zero noise).
+  const preflightSummary = useMemo(
+    () =>
+      summarizePreflight(
+        selected.map((p) => ({
+          frozen: rowFrozen.has(p.id),
+          unverified: rowUnverified.has(p.id),
+          exchange: rowExchange.get(p.id),
+        }))
+      ),
+    [selected, rowFrozen, rowUnverified, rowExchange]
+  )
 
   // --- Subscription gate + OFAC screening ---------------------------------
   // The subscription is a FRONTEND paywall (disperse() is free on-chain); OFAC
@@ -580,14 +655,24 @@ export function usePayout() {
     blockedCount === 0 &&
     shortfallUnits <= 0n
 
-  const runPayment = useCallback(
+  // The real signing path — GATE 0 (wallet-control proof) → authorize → disperse. Reached ONLY
+  // after preflightThenPay clears the frozen/exchange pre-flight (below), so a frozen destination
+  // can never get here. The guard re-asserts it (Task 4 invariant): a batch containing a frozen
+  // row is stopped before any signature, calmly, even if the flow were ever re-entered.
+  const executePayout = useCallback(
     async (rows: Payee[]) => {
       if (!account || rows.length === 0) return
 
-      // Free-mode shortcut: a batch of more than one can never be a free payout —
-      // go straight to the paywall, no round trip.
-      if (freeModeRef.current && rows.length > 1) {
-        setPaywallOpen(true)
+      // Sign-time frozen guard (defence-in-depth over the pre-flight). rowFrozenRef is set
+      // synchronously in preflightThenPay for the SAME batch, so it is always fresh here.
+      if (hasBlockingRow(rows.map((r) => ({ frozen: rowFrozenRef.current.has(r.id) })))) {
+        setPayError(
+          new PurserError(
+            "unknown",
+            "A recipient is frozen by Tether — remove it to continue. Nothing was sent.",
+            "frozen_row_blocked_sign"
+          )
+        )
         return
       }
 
@@ -679,6 +764,11 @@ export function usePayout() {
             setRowTxState((prev) => withMapValue(prev, batch.rowIds, "confirmed"))
             // Persist the receipt → paidIds updates via live query → green.
             void addReceipt(batch).catch(() => {})
+            // Index the disperse into the affiliate receipt store (going forward), so a
+            // payee can later prove they were paid through PurserPay. Fire-and-forget,
+            // txid-only: the server re-verifies + decodes the tx on-chain itself. Never
+            // affects the payout (which already succeeded). See docs/09.
+            void recordDisperse(batch.txid).catch(() => {})
           },
           onBatchFailed: (_i, _t, rowIds, err) => {
             setRowTxState((prev) => withMapValue(prev, rowIds, "failed"))
@@ -711,10 +801,104 @@ export function usePayout() {
     [account, refreshBalance]
   )
 
+  // GATE -1 — the advisory frozen/exchange pre-flight, run at PAY-INITIATION (respecting the
+  // TronGrid rate limit; not per render). Reads USDT's blacklist for the payer + every recipient
+  // (server action), classifies the batch, and either STOPS on a frozen row/sender (never signs —
+  // the on-chain guard would revert anyway, but we stop it here, calmly) or, on an exchange row,
+  // opens the accept-and-pay disclaimer. A clean batch flows straight to executePayout. Fail-safe
+  // (D-7): a catastrophic read failure → every address UNVERIFIED, never SAFE.
+  const preflightThenPay = useCallback(
+    async (rows: Payee[]) => {
+      if (!account || rows.length === 0) return
+
+      // Free-mode shortcut: a batch of more than one can never be a free payout — go straight to
+      // the paywall, no read. (A single free row still gets the frozen/exchange pre-flight below.)
+      if (freeModeRef.current && rows.length > 1) {
+        setPaywallOpen(true)
+        return
+      }
+
+      setPayError(null)
+      setCooldownUntil(null)
+
+      setPreflightChecking(true)
+      let statusByAddress: Map<string, BlacklistStatus>
+      try {
+        const entries = await readBatchBlacklist([
+          account.address,
+          ...rows.map((r) => r.address),
+        ])
+        statusByAddress = new Map(entries)
+      } catch {
+        // D-7 in the UI: a catastrophic read failure leaves nothing SAFE — an empty map means
+        // previewBatch marks every address UNVERIFIED (never green).
+        statusByAddress = new Map()
+      } finally {
+        setPreflightChecking(false)
+      }
+
+      const preview = previewBatch({
+        payer: account.address,
+        rows: rows.map((r) => ({ id: r.id, address: r.address })),
+        statusByAddress,
+        classify: classifyAddress,
+      })
+      // Accumulate this read into what we know per address (merge, never replace) so the badges a
+      // prior batch surfaced survive a later single-row pay.
+      setBlacklistByAddress((prev) => new Map([...prev, ...statusByAddress]))
+      // Mirror this batch's frozen ids synchronously for executePayout's sign-time guard.
+      rowFrozenRef.current = new Set(
+        preview.rows.filter((r) => r.status === "FROZEN").map((r) => r.id)
+      )
+
+      // A frozen destination or a frozen payer → STOP. Never sign; a payment would be trapped.
+      if (preview.hasFrozen) {
+        setPayError(
+          new PurserError(
+            "unknown",
+            preview.senderFrozen
+              ? "Your wallet is frozen by Tether — this batch can't be sent. Nothing was sent."
+              : "A recipient is frozen by Tether — remove it to continue. Nothing was sent.",
+            "frozen_preflight"
+          )
+        )
+        return
+      }
+
+      // Exchange rows → confirm at decide-time (the disclaimer lands here, not in a tooltip).
+      const exch = preview.rows.filter((r) => r.status === "EXCHANGE")
+      if (exch.length > 0) {
+        pendingPayRef.current = rows
+        setExchangeConfirm({
+          rows: exch.map((r) => ({ address: r.address, exchange: r.exchange })),
+        })
+        return
+      }
+
+      // Clean → proceed to the real signing path.
+      await executePayout(rows)
+    },
+    [account, executePayout]
+  )
+
+  // The exchange accept-and-pay dialog's actions. "Continue" signs the pending batch (already
+  // proven free of frozen rows in the same pre-flight); "Cancel" abandons it, signing nothing.
+  const confirmExchangeAndPay = useCallback(async () => {
+    const rows = pendingPayRef.current
+    pendingPayRef.current = null
+    setExchangeConfirm(null)
+    if (rows) await executePayout(rows)
+  }, [executePayout])
+
+  const cancelExchangeConfirm = useCallback(() => {
+    pendingPayRef.current = null
+    setExchangeConfirm(null)
+  }, [])
+
   const payAll = useCallback(() => {
     if (!canPayAll) return
-    void runPayment(payable)
-  }, [canPayAll, payable, runPayment])
+    void preflightThenPay(payable)
+  }, [canPayAll, payable, preflightThenPay])
 
   const payRow = useCallback(
     (id: string) => {
@@ -727,9 +911,9 @@ export function usePayout() {
       } catch {
         return
       }
-      void runPayment([p])
+      void preflightThenPay([p])
     },
-    [connected, wrongNetwork, paying, screening, roster, paidIds, rowBlocked, balanceUnits, runPayment]
+    [connected, wrongNetwork, paying, screening, roster, paidIds, rowBlocked, balanceUnits, preflightThenPay]
   )
 
   // --- Subscription action -------------------------------------------------
@@ -930,6 +1114,15 @@ export function usePayout() {
     verifyByPayee,
     rowBlocked,
     rowOfacFlagged,
+    // frozen-address pre-flight (S-3, advisory)
+    rowExchange,
+    rowFrozen,
+    rowUnverified,
+    preflightChecking,
+    preflightSummary,
+    exchangeConfirm,
+    confirmExchangeAndPay,
+    cancelExchangeConfirm,
     // tx state
     rowTxState,
     txidByPayee,

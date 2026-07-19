@@ -5,9 +5,20 @@ import {Test} from "forge-std/Test.sol";
 import {PurserPay} from "../src/PurserPay.sol";
 
 /**
- * @dev Minimal, compliant 6-decimal TRC-20 mock: transferFrom REVERTS on insufficient
- *      balance/allowance (the well-behaved case). Declared inline so contracts/mocks/
- *      can stay deleted and the Foundry env carries no external dependency.
+ * @dev Faithful 6-decimal USDT-TRC20 mock, matching the REAL Tether contract's two
+ *      non-standard traits the guard must interact with:
+ *
+ *      1. transferFrom has NO `returns (bool)` — real USDT (Solidity 0.4.x) returns
+ *         nothing. PurserPay._safeTransferFrom tolerates that (empty return = success).
+ *      2. A blacklist (getBlackListStatus / isBlackListed), but transferFrom does NOT
+ *         check the DESTINATION: a transfer to a frozen address SUCCEEDS and the funds
+ *         are trapped forever. That is exactly the trap PurserPay's on-chain guard
+ *         defends against — so this mock must let a test freeze a recipient and see the
+ *         transfer itself would go through (only PurserPay reverts it).
+ *
+ *      transferFrom still reverts on insufficient balance/allowance (the well-behaved
+ *      failure). Declared inline so contracts/mocks/ can stay deleted and the Foundry
+ *      env carries no external dependency.
  */
 contract MockUSDT {
     string public name = "Mock USDT (TRC20)";
@@ -16,6 +27,28 @@ contract MockUSDT {
 
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
+
+    /// @dev Real Tether exposes BOTH isBlackListed (public map) and getBlackListStatus().
+    mapping(address => bool) public isBlackListed;
+    address public blacklistOwner;
+
+    constructor() {
+        blacklistOwner = msg.sender;
+    }
+
+    function getBlackListStatus(address maker) external view returns (bool) {
+        return isBlackListed[maker];
+    }
+
+    function addBlackList(address evilUser) external {
+        require(msg.sender == blacklistOwner, "only owner");
+        isBlackListed[evilUser] = true;
+    }
+
+    function removeBlackList(address clearedUser) external {
+        require(msg.sender == blacklistOwner, "only owner");
+        isBlackListed[clearedUser] = false;
+    }
 
     function mint(address to, uint256 amount) external {
         balanceOf[to] += amount;
@@ -33,13 +66,14 @@ contract MockUSDT {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    /// @dev NO return value (real USDT ABI). Does NOT check the destination blacklist —
+    ///      a transfer to a frozen `to` SUCCEEDS here; only PurserPay's guard stops it.
+    function transferFrom(address from, address to, uint256 amount) external {
         require(balanceOf[from] >= amount, "insufficient balance");
         require(allowance[from][msg.sender] >= amount, "insufficient allowance");
         allowance[from][msg.sender] -= amount;
         balanceOf[from] -= amount;
         balanceOf[to] += amount;
-        return true;
     }
 }
 
@@ -52,6 +86,14 @@ contract NonCompliantUSDT {
     uint8 public constant decimals = 6;
     mapping(address => uint256) public balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
+    mapping(address => bool) public isBlackListed;
+
+    /// @dev Blacklist view so this can stand in as PurserPay's `usdt` immutable — the
+    ///      guard staticcalls getBlackListStatus before each transfer. Left permanently
+    ///      empty here; this mock exists to prove the FALSE-RETURN path, not the blacklist.
+    function getBlackListStatus(address maker) external view returns (bool) {
+        return isBlackListed[maker];
+    }
 
     function mint(address to, uint256 amount) external {
         balanceOf[to] += amount;
@@ -561,8 +603,13 @@ contract PurserPayTest is Test {
     }
 
     /// @dev A token that returns false (instead of reverting) must still fail the batch.
+    /// @dev A token that returns false (instead of reverting) must still fail the batch.
+    ///      Since disperse now enforces `token == usdt`, the non-compliant token has to BE
+    ///      this contract's `usdt`: deploy a dedicated PurserPay over `bad` so the
+    ///      false-return path is still exercised end-to-end through the real disperse.
     function test_Disperse_NonCompliantTokenReturningFalse_Reverts() public {
         NonCompliantUSDT bad = new NonCompliantUSDT();
+        PurserPay badPurser = new PurserPay(address(bad), treasury);
         address r1 = makeAddr("r1nc");
         address[] memory recipients = new address[](1);
         recipients[0] = r1;
@@ -572,7 +619,7 @@ contract PurserPayTest is Test {
         // Underfunded (1 unit) but generous allowance → transferFrom returns false.
         bad.mint(payer, 1);
         vm.prank(payer);
-        bad.approve(address(purser), 100 * 10 ** 6);
+        bad.approve(address(badPurser), 100 * 10 ** 6);
 
         vm.prank(payer);
         vm.expectRevert(
@@ -580,9 +627,169 @@ contract PurserPayTest is Test {
                 PurserPay.TransferFailed.selector, address(bad), payer, r1, 100 * 10 ** 6
             )
         );
-        purser.disperse(address(bad), recipients, amounts);
+        badPurser.disperse(address(bad), recipients, amounts);
 
         assertEq(bad.balanceOf(r1), 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // disperse() — frozen-address guard (the on-chain security layer)
+    // -------------------------------------------------------------------------
+
+    /// @dev disperse is USDT-only: a token other than the immutable `usdt` reverts
+    ///      UnsupportedToken so the frozen-address blacklist read always matches the
+    ///      token actually moved. Nothing is transferred.
+    function test_Disperse_UnsupportedToken_Reverts() public {
+        MockUSDT other = new MockUSDT();
+        address r1 = makeAddr("ru");
+        address[] memory recipients = new address[](1);
+        recipients[0] = r1;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 10 * 10 ** 6;
+
+        other.mint(payer, 10 * 10 ** 6);
+        vm.prank(payer);
+        other.approve(address(purser), 10 * 10 ** 6);
+
+        vm.prank(payer);
+        vm.expectRevert(
+            abi.encodeWithSelector(PurserPay.UnsupportedToken.selector, address(other))
+        );
+        purser.disperse(address(other), recipients, amounts);
+
+        assertEq(other.balanceOf(r1), 0, "nothing moved");
+        assertEq(other.balanceOf(payer), 10 * 10 ** 6, "payer whole");
+    }
+
+    /// @dev A single frozen recipient → the disperse reverts DestinationBlacklisted and
+    ///      NOT ONE base unit moves (USDT itself would have let it through and trapped it).
+    function test_Disperse_FrozenDestination_Reverts() public {
+        address frozen = makeAddr("frozen");
+        address[] memory recipients = new address[](1);
+        recipients[0] = frozen;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 10 ** 6;
+
+        usdt.mint(payer, 100 * 10 ** 6);
+        vm.prank(payer);
+        usdt.approve(address(purser), 100 * 10 ** 6);
+
+        usdt.addBlackList(frozen);
+
+        vm.prank(payer);
+        vm.expectRevert(
+            abi.encodeWithSelector(PurserPay.DestinationBlacklisted.selector, frozen)
+        );
+        purser.disperse(address(usdt), recipients, amounts);
+
+        assertEq(usdt.balanceOf(frozen), 0, "frozen recipient unpaid");
+        assertEq(usdt.balanceOf(payer), 100 * 10 ** 6, "payer whole");
+    }
+
+    /// @dev One frozen row among many → the WHOLE batch reverts (atomic, D-4). The frozen
+    ///      row is LAST, so rows that already transferred must roll back — no partial payout.
+    function test_Disperse_OneFrozenRowAmongMany_RevertsWholeBatch() public {
+        address a = makeAddr("fa");
+        address b = makeAddr("fb");
+        address frozen = makeAddr("fc");
+
+        address[] memory recipients = new address[](3);
+        recipients[0] = a;
+        recipients[1] = b;
+        recipients[2] = frozen;
+        uint256[] memory amounts = new uint256[](3);
+        amounts[0] = 100 * 10 ** 6;
+        amounts[1] = 250 * 10 ** 6;
+        amounts[2] = 5 * 10 ** 6;
+        uint256 total = 355 * 10 ** 6;
+
+        usdt.mint(payer, total);
+        vm.prank(payer);
+        usdt.approve(address(purser), total);
+
+        usdt.addBlackList(frozen);
+
+        vm.prank(payer);
+        vm.expectRevert(
+            abi.encodeWithSelector(PurserPay.DestinationBlacklisted.selector, frozen)
+        );
+        purser.disperse(address(usdt), recipients, amounts);
+
+        // Atomicity: the two earlier rows rolled back — nobody was paid.
+        assertEq(usdt.balanceOf(a), 0, "row 0 rolled back");
+        assertEq(usdt.balanceOf(b), 0, "row 1 rolled back");
+        assertEq(usdt.balanceOf(frozen), 0, "frozen row unpaid");
+        assertEq(usdt.balanceOf(payer), total, "payer whole - no partial payout");
+        assertEq(usdt.balanceOf(address(purser)), 0, "contract holds nothing");
+    }
+
+    /// @dev A frozen PAYER → named SenderBlacklisted before the token is touched (USDT's
+    ///      own transferFrom would have reverted opaquely). Nothing moves.
+    function test_Disperse_FrozenSender_Reverts() public {
+        address r1 = makeAddr("rs");
+        address[] memory recipients = new address[](1);
+        recipients[0] = r1;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 10 ** 6;
+
+        usdt.mint(payer, 100 * 10 ** 6);
+        vm.prank(payer);
+        usdt.approve(address(purser), 100 * 10 ** 6);
+
+        usdt.addBlackList(payer);
+
+        vm.prank(payer);
+        vm.expectRevert(
+            abi.encodeWithSelector(PurserPay.SenderBlacklisted.selector, payer)
+        );
+        purser.disperse(address(usdt), recipients, amounts);
+
+        assertEq(usdt.balanceOf(r1), 0, "recipient unpaid");
+        assertEq(usdt.balanceOf(payer), 100 * 10 ** 6, "payer whole");
+    }
+
+    /// @dev Un-freezing a destination restores the happy path — the guard reads live
+    ///      blacklist state, it is not a deploy-time constant.
+    function test_Disperse_UnfreezeRestoresPayment() public {
+        address r1 = makeAddr("rf");
+        address[] memory recipients = new address[](1);
+        recipients[0] = r1;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100 * 10 ** 6;
+
+        usdt.mint(payer, 100 * 10 ** 6);
+        vm.prank(payer);
+        usdt.approve(address(purser), 100 * 10 ** 6);
+
+        usdt.addBlackList(r1);
+        usdt.removeBlackList(r1);
+
+        vm.prank(payer);
+        purser.disperse(address(usdt), recipients, amounts);
+
+        assertEq(usdt.balanceOf(r1), 100 * 10 ** 6, "paid after unfreeze");
+        assertEq(usdt.balanceOf(address(purser)), 0, "contract holds nothing");
+    }
+
+    /// @dev The faithful mock's transferFrom returns NOTHING (real USDT ABI). A clean
+    ///      disperse still succeeds through _safeTransferFrom's empty-return-is-success
+    ///      handling — proving the guard + disperse interact correctly with the missing return.
+    function test_Disperse_MissingReturnTransferFrom_Succeeds() public {
+        address r1 = makeAddr("rmr");
+        address[] memory recipients = new address[](1);
+        recipients[0] = r1;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 77 * 10 ** 6;
+
+        usdt.mint(payer, 77 * 10 ** 6);
+        vm.prank(payer);
+        usdt.approve(address(purser), 77 * 10 ** 6);
+
+        vm.prank(payer);
+        purser.disperse(address(usdt), recipients, amounts);
+
+        assertEq(usdt.balanceOf(r1), 77 * 10 ** 6, "recipient paid despite void return");
+        assertEq(usdt.balanceOf(address(purser)), 0, "contract holds nothing");
     }
 
     // -------------------------------------------------------------------------

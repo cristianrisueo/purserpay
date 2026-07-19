@@ -13,12 +13,23 @@
 
 | Tier | What | Where | Leaves the browser? |
 | --- | --- | --- | --- |
-| **Roster** | payee names, roles, addresses, amounts; payout receipts | **IndexedDB (Dexie)** — `src/lib/db.ts` | **Never** in readable form. The only thing that leaves is the transaction the user signs. |
+| **Roster** | payee names, roles, addresses, amounts; payout receipts | **IndexedDB (Dexie)** — `src/lib/db.ts` | **Never** in readable form. Two public artifacts leave: the transaction the user signs, and — after it confirms — its **public txid** (best-effort, to populate the dissociated affiliate receipt index; see the note below + [`09`](./09-affiliate-portal.md)). Names, amounts, and cleartext recipient wallets never leave. |
 | **Account + compliance** | account holder's PII (name, country, tax id); OFAC screening data; **free-tier usage** (payer-wallet hash + last-used timestamp); **wallet-control challenges** (ephemeral nonce + payer-wallet hash) | **Supabase** — `0001_compliance_schema.sql`, `0002_free_tier_usage.sql`, `0004_payout_challenges.sql` | Yes, but **encrypted** (PII, pgcrypto AES-256) or **salted-hashed** (wallets — OFAC + free-tier + challenge). Never readable. (Subscription state is **on-chain**, read live — not stored here.) |
 
 The dividing line is absolute: **the server never receives the roster.** See
 [`04-compliance-and-encryption.md`](./04-compliance-and-encryption.md) for the encrypted
 tier; this doc covers the roster tier and the payout pipeline.
+
+> **A third, dissociated server-side store exists — and it is NOT the roster.** Since the affiliate
+> portal (Sprint 1A), a **forward-only receipt index** (`disperse_receipts`,
+> [`0005_affiliate_portal.sql`](../supabase/migrations/0005_affiliate_portal.sql)) records
+> `hash(recipient) + amount + payer + txid`, **all derived from the public on-chain `disperse`
+> calldata** — salted-hashed recipients, no names, no cleartext recipient wallets. It is populated
+> from the confirmed batch's **public txid** (§4/§5), never from the roster. So "the server never
+> receives the roster" holds exactly, while a hashed, on-chain-derived index *does* live server-side.
+> Details: [`09`](./09-affiliate-portal.md). (The account/compliance tier likewise spans the referral
+> tables, `0003`, and receipt-audit column, `0006` — the migration list above is illustrative, not
+> exhaustive.)
 
 ## 2. The Dexie schema (`src/lib/db.ts`)
 
@@ -37,6 +48,26 @@ left completely untouched, never half-written. A payee is **never** destroyed ju
 the balance won't cover them (Law of UX #2 — see [`05` is the contract; UX laws live in
 `CLAUDE.md`]).
 
+**Unique addresses — enforced at insertion (`src/lib/rosterDedupe.ts`).** The roster
+guarantees each TRON address appears at most once, because the atomic disperse batch is
+built straight from it — the same wallet twice would pay one person twice in a single
+signature (a silent double-payment of real money). "Duplicate" = the same base58 string,
+matched **case-sensitively** (TRON base58 is case-sensitive; two addresses differing only in
+case are *different* wallets). The rule is **RETAIN, never DISCARD** — a duplicate is never
+silently auto-removed; the user decides which row is valid. `rosterDedupe.ts` (pure,
+dependency-free) is the single source of truth, used by both paths:
+
+- **Manual add/edit** (`addPayee` / `updatePayee`): rejects a colliding address with a named
+  error *before* persisting (`findAddressOwner`, excluding the row being edited so re-saving
+  a payee with its own address is allowed); the existing row is left untouched. `PayeeFormDialog`
+  surfaces it in the same error box as shape validation.
+- **CSV import** (`applyMapping` → `splitByAddress`): imports the **unique** rows and holds
+  back **every** row of a shared-address group (none is imported — a duplicate never silently
+  picks a winner), surfacing each conflict by file row number ("Rows 4 and 12 …") for the user
+  to resolve and re-add. `replaceRoster` also carries a defense-in-depth `findDuplicateAddresses`
+  guard so the uniqueness invariant holds for any caller. (Dedupe is **within the incoming
+  file**; a full overwrite replaces the prior roster anyway.)
+
 ## 3. Green = paid (derived, not a flag)
 
 "Paid"/green is **derived from receipts**, not stored on the row. Logic in
@@ -53,15 +84,87 @@ the balance won't cover them (Law of UX #2 — see [`05` is the contract; UX law
 This is what makes accidental **re-payment structurally hard**: a paid row is visibly
 green and excluded from `outstanding`/`payable` in the hook.
 
+## 3b. Pre-flight preview — advisory, mirrors the on-chain guard (S-2)
+
+Before the sign-time pipeline runs, an **advisory** pre-flight classifies every row so the
+operator sees a frozen/exchange/unverified destination **before** signing — never as an opaque
+revert. It is **advisory only**: the on-chain guard ([`05`](./05-smart-contract.md), `disperse`
+reverts a frozen destination) is the real guarantee at sign time. Backend pieces (S-2; the S-3
+dashboard renders them):
+
+- **Blacklist read — FAIL-SAFE (D-7).** `readDestinationBlacklist` (`src/lib/tron/serverRead.ts`)
+  reads USDT's `getBlackListStatus(dest)` server-side (same keyless node + `TRON_PRO_API_KEY` as
+  the subscription read), against the SAME `USDT_ADDRESS` the active network targets. The pure core
+  `readBlacklistStatuses` (`src/lib/security/blacklist.ts`) **dedupes** to one read per unique
+  address (TronGrid rate limit) and maps `true→FROZEN`, `false→SAFE`, and **any failed/timed-out/
+  rate-limited read → `UNVERIFIED`, NEVER `SAFE`** (D-7 — a failure must never render green). Unlike
+  the OFAC screen (which fails *closed*), this fails *safe*: it can't hard-block, so a TronGrid
+  hiccup degrades to "cannot confirm safe", not "blocked".
+- **Exchange detection (advisory, with a declared GAP).** `classifyAddress`
+  (`src/lib/security/exchangeDetect.ts`) exact-matches a recipient against a **versioned in-repo
+  list** of publicly-labelled exchange addresses (Binance/HTX/Gate seeded; others a noted GAP). It
+  catches **tagged** addresses only — **not** per-user deposit addresses (the real cash-out case) —
+  and does **not** know each exchange's credit policy, so the downstream disclaimer stays **generic**.
+- **`previewBatch`** (`src/lib/security/previewBatch.ts`, pure) merges the two into a per-row
+  `status ∈ {READY, FROZEN, EXCHANGE, UNVERIFIED, BLOCKED}`. Its order **mirrors the S-1 guard**
+  (`disperse`): the **payer** is evaluated first (`senderFrozen` → `SenderBlacklisted`), then per row
+  `FROZEN` (→ `DestinationBlacklisted`, the hard block) **>** `UNVERIFIED` **>** `BLOCKED` (the
+  pay-time balance/allowance block, passed IN from `usePayout` — not recomputed) **>** `EXCHANGE`
+  (advisory) **>** `READY`. Because preview and execution share the same order, they never disagree;
+  `FROZEN`/`senderFrozen` mean "cannot pay", `UNVERIFIED` means "cannot confirm safe".
+
+### 3b-i. How the dashboard renders it (S-3)
+
+The S-3 dashboard turns that classification into what the operator sees. The **visual doctrine is
+owner-CLOSED** (encoded in `src/lib/security/preflightView.ts`, asserted in
+`tests/security/preflightView.test.ts`):
+
+- **GREEN = PAID, and ONLY paid.** Nothing in the pre-flight is ever green — a clean/ready row shows
+  **no security badge** (absence of alarm = ok). There is no "green = safe/ready" state, ever.
+- **Per-row badges** (address cell, `columns.tsx`): **FROZEN** → a red `⊘ Frozen (Tether)` badge that
+  **replaces** the "Valid on TRON" line, **always visible (never hover-only)**; the row's Pay is
+  disabled (it joins the same `payDisabled` set as OFAC-sanctioned rows) but it is still **removable**.
+  **EXCHANGE** → a discreet **amber** `⚠ Exchange?` chip *next to* the validation line (does not
+  replace, does not block; hover = the generic S-2-GAP disclaimer). **UNVERIFIED** → a muted
+  `◻ Unverified` chip (advisory, **never green, never blocks**; the on-chain guard re-checks at pay).
+  **checking** → a neutral `Checking…` chip while the read is in flight (D-7 in the UI — never
+  assumed safe). Hover detail is reserved for the **non-blocking** states (frozen severity is always
+  visible on its face).
+- **Contextual banner** (`PreflightBanner.tsx`, above the table) — renders **only** when the selected
+  batch has ≥1 flagged row (a clean batch shows nothing; zero noise). One line, only the segments with
+  a count: `⊘ N frozen · ⚠ N exchange deposits · ◻ N unverified`. It doubles as the color legend.
+- **Accept-and-pay** (`ExchangeConfirmDialog.tsx`) — if the batch contains EXCHANGE rows, the generic
+  disclaimer lands **at decide-time**, right before the signature, with an explicit accept. FROZEN
+  rows can never reach this step (Pay disabled + the pre-flight halts the batch); the sign path
+  re-asserts it (`hasBlockingRow` → **a batch with a frozen row can never be signed**).
+- **Add/edit address confirmation** (`PayeeFormDialog.tsx`) — a **new or changed** address must have
+  its **last 6 characters** confirmed (a required checkbox) before Save, killing the pasted-corrupted
+  (clipboard-malware) vector. Editing only the amount asks nothing.
+
+**Timing & wiring (`usePayout.ts`).** The blacklist read is a rate-limited round-trip, so it runs at
+**pay-initiation** (`preflightThenPay`, GATE -1 below) — never per keystroke/render. Exchange
+classification is pure/instant, so the amber chip + banner exchange count surface **proactively** on
+every roster change. Readings **accumulate per address** (a later single-row pay never erases the
+frozen badges a prior Pay-all surfaced) and clear when the roster's addresses change. The **`--warning`
+amber token** (`globals.css`) exists solely for the exchange advisory — distinct from error-red
+(frozen/sanctioned) and success-green (**reserved for paid**). All of this is **reads only** —
+non-custodial is untouched.
+
 ## 4. The payout pipeline — the 3-gate choke-point
 
-Every payout — "Pay all" or a single row — funnels through **one** function:
-`runPayment(rows)` in `src/hooks/usePayout.ts`. It enforces three gates in order. This is
-the single most important control-flow in the app.
+Every payout — "Pay all" or a single row — funnels through **one** entry, `preflightThenPay(rows)`
+in `src/hooks/usePayout.ts`, which runs the advisory **GATE -1** pre-flight (§3b) and then hands a
+clean/accepted batch to `executePayout(rows)`, the real signing path that enforces the three gates
+in order. This is the single most important control-flow in the app.
 
 ```mermaid
 flowchart TD
-    Start([User clicks Pay all / Pay row]) --> Prove["Gate 0: prove wallet control<br/>GET /api/payout/challenge → sign (signMessageV2)"]
+    Start([User clicks Pay all / Pay row]) --> Pre["Gate -1: pre-flight (advisory, reads only)<br/>readBatchBlacklist(payer + recipients) → previewBatch"]
+    Pre -->|"frozen row / frozen sender"| Halt[HALT — badges + banner light up,<br/>NOTHING signed; remove the frozen row]
+    Pre -->|"exchange row"| Confirm2[ExchangeConfirmDialog —<br/>accept the disclaimer to continue]
+    Pre -->|"clean / accepted"| Prove
+    Confirm2 -->|accept| Prove
+    Prove["Gate 0: prove wallet control<br/>GET /api/payout/challenge → sign (signMessageV2)"]
     Prove -->|"rejected / challenge failure"| FailClosed[calm message —<br/>NOTHING signed, fail CLOSED]
     Prove -->|"signed {nonce, signature}"| Authz["Gates 0-3, fused server-side:<br/>POST /api/payout/authorize<br/>proof → OFAC → subscription → referral credit → free-tier quota"]
     Authz -->|"403 WALLET_PROOF_* / OFAC_BLOCKED"| Block[OfacBlockedDialog<br/>or calm block —<br/>whole batch blocked]
@@ -77,10 +180,17 @@ flowchart TD
     Confirm -->|no| Stop[stop at first failure —<br/>confirmed batches are real,<br/>nothing after is 'paid']
 ```
 
-Gate specifics (all in `usePayout.ts` → `runPayment`, plus `canPayAll`):
+Gate specifics (all in `usePayout.ts` → `preflightThenPay` then `executePayout`, plus `canPayAll`):
 
-- **Gate 0 — prove wallet control (runs FIRST).** Before any server state is touched,
-  `runPayment` calls `proveWalletControl` (`src/lib/payout/challengeClient.ts`): fetch a
+- **Gate -1 — pre-flight (advisory, reads only; runs FIRST).** `preflightThenPay` reads the
+  frozen-address status of the payer + every recipient (`readBatchBlacklist`) and classifies the
+  batch (`previewBatch`, §3b). A **frozen** row or sender **halts** the flow — nothing is signed, the
+  badges/banner light up, the operator removes the frozen row. An **exchange** row opens the
+  accept-and-pay disclaimer. A clean (or accepted) batch proceeds to Gate 0. Fail-safe (D-7): a
+  catastrophic read failure marks everything UNVERIFIED (never SAFE), which does not block — the
+  on-chain guard is the real gate.
+- **Gate 0 — prove wallet control (runs after the pre-flight).** Before any server state is touched,
+  `executePayout` calls `proveWalletControl` (`src/lib/payout/challengeClient.ts`): fetch a
   single-use challenge (`GET /api/payout/challenge`) and sign it with the connected wallet
   (`signMessageV2`, one prompt). The `{nonce, signature}` ride along in the authorize body; the
   server recovers the signer and asserts it equals `payerAddress` **before** OFAC / subscription
@@ -134,6 +244,13 @@ tells you how much is missing, rather than letting a payout revert.
    confirmed batch is genuinely on-chain; nothing in or after a failed batch is ever
    reported paid. A half-batch or a "paid" that didn't move money is structurally
    impossible.
+
+> **Forward-only receipt index (affiliate portal).** On each `SUCCESS`, alongside the device-local
+> `addReceipt`, `usePayout` (`onBatchConfirmed`) fires a best-effort `recordDisperse(txid)` →
+> `POST /api/affiliate/record` (`src/lib/affiliate/recordClient.ts`). It sends **only the public
+> txid**; the server re-verifies + decodes the on-chain calldata and salt-hashes recipients into
+> `disperse_receipts` — never the roster, never a name or cleartext recipient wallet. This is the
+> txid egress noted in §1. See [`09`](./09-affiliate-portal.md) §2.
 
 Atomicity guarantee: the on-chain `disperse` is all-or-nothing (see
 [`05`](./05-smart-contract.md)). The frontend never paints green except on a `SUCCESS`

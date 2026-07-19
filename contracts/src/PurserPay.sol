@@ -15,6 +15,21 @@ interface ITRC20 {
 }
 
 /**
+ * @title  IUsdt
+ * @notice The USDT-specific surface PurserPay reads for its on-chain frozen-address guard.
+ * @dev    VIEW ONLY — this interface deliberately does NOT declare transferFrom. Real TRON
+ *         USDT (Solidity 0.4.x) returns NOTHING from transferFrom, so a typed call through a
+ *         `returns (bool)` declaration would try to abi-decode an absent bool and revert
+ *         (D-5). Transfers therefore go through the low-level ITRC20.transferFrom.selector
+ *         path in _safeTransferFrom; only the blacklist read — which genuinely returns a
+ *         bool — is a typed staticcall. Real USDT exposes BOTH getBlackListStatus() and an
+ *         isBlackListed public map; the guard uses getBlackListStatus.
+ */
+interface IUsdt {
+    function getBlackListStatus(address maker) external view returns (bool);
+}
+
+/**
  * @title  PurserPay
  * @notice Non-custodial USDT payout + subscription contract for PurserPay.
  *
@@ -22,7 +37,11 @@ interface ITRC20 {
  *           - disperse(): a FREE batch-payout utility. USDT moves straight from the
  *             payer to each recipient via transferFrom — no fee, no percentage, no
  *             funds retained. This is the compliance moat: Purser has zero control
- *             over user funds.
+ *             over user funds. It carries the frozen-address guard: because real USDT
+ *             lets a transfer to a Tether-blacklisted address SUCCEED and trap the funds
+ *             forever, disperse reads the blacklist in the same frame and reverts the
+ *             whole batch (DestinationBlacklisted / SenderBlacklisted) — atomically, no
+ *             trapped funds. disperse is USDT-only (token must equal the immutable usdt).
  *           - subscribe(planType): the flat monetization. Pulls EXACTLY the plan's
  *             current price (150 USDT monthly / 1,500 USDT annual at deploy) from the
  *             subscriber and forwards it, in the same transaction, to a cold treasury.
@@ -133,6 +152,16 @@ contract PurserPay {
     error InvalidPlan(uint8 planType);
     /// @dev An owner-only function was called by a non-owner.
     error NotOwner();
+    /// @dev disperse() called with a token other than the immutable `usdt`. disperse is
+    ///      USDT-only so the frozen-address guard (which reads `usdt`'s blacklist) always
+    ///      corresponds to the token actually moved.
+    error UnsupportedToken(address token);
+    /// @dev A recipient is on USDT's blacklist. USDT would let the transfer SUCCEED and
+    ///      trap the funds forever; PurserPay reverts the whole batch instead.
+    error DestinationBlacklisted(address dest);
+    /// @dev The payer is on USDT's blacklist. USDT's own transferFrom would revert opaquely
+    ///      (0.4.x); this surfaces it as a named error before the token is ever touched.
+    error SenderBlacklisted(address sender);
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -266,15 +295,35 @@ contract PurserPay {
     // -------------------------------------------------------------------------
 
     /**
-     * @notice Batch-pay `recipients[i]` exactly `amounts[i]` of `token`, all pulled
-     *         from the caller. Atomic: every transfer succeeds or the whole call
-     *         reverts. The contract never touches the funds — each transfer moves
-     *         value directly from the caller to a recipient.
-     * @param token      TRC-20 token to pay in (USDT in production).
+     * @notice Batch-pay `recipients[i]` exactly `amounts[i]` of USDT, all pulled from the
+     *         caller. Atomic: every transfer succeeds or the whole call reverts. The
+     *         contract never touches the funds — each transfer moves value directly from
+     *         the caller to a recipient.
+     *
+     * @dev    Frozen-address guard (the core of PurserPay's security layer). Real USDT does
+     *         NOT check the destination: a transferFrom to a Tether-blacklisted address
+     *         SUCCEEDS and the funds are trapped forever (~3.6% recovery). PurserPay reads
+     *         the blacklist in the SAME transaction and reverts instead, so a batch can
+     *         never trap funds. The read is a trivial STATICCALL vs the ~tens-of-thousands
+     *         of energy a transfer costs. Atomicity is TVM-native — a revert on any row
+     *         rolls the ENTIRE batch back; there is no manual rollback and no partial payout.
+     *
+     *         `token` must equal the immutable `usdt` (`UnsupportedToken` otherwise): the
+     *         blacklist can only be read from `usdt`, so pinning the moved token to it keeps
+     *         the check provably about the token actually paid. disperse is USDT-only — the
+     *         `token` parameter is retained purely to preserve the call/selector shape.
+     *
+     * @param token      Must be the immutable `usdt` (USDT-TRC20). Any other token reverts.
      * @param recipients Payee addresses; must be non-zero and length-matched to `amounts`.
      * @param amounts    Base-unit amounts (6-dp for USDT); each must be non-zero.
      */
     function disperse(address token, address[] calldata recipients, uint256[] calldata amounts) external {
+        // disperse is USDT-only, so the blacklist read below (which is keyed on the
+        // immutable `usdt`) always matches the token being moved.
+        if (token != usdt) {
+            revert UnsupportedToken(token);
+        }
+
         uint256 len = recipients.length;
 
         if (len != amounts.length) {
@@ -282,6 +331,12 @@ contract PurserPay {
         }
         if (len == 0) {
             revert EmptyBatch();
+        }
+
+        // Payer guard (once): a blacklisted sender's transferFrom reverts OPAQUELY inside
+        // USDT's 0.4.x code — surface it as a named error before touching the token.
+        if (IUsdt(usdt).getBlackListStatus(msg.sender)) {
+            revert SenderBlacklisted(msg.sender);
         }
 
         uint256 total = 0;
@@ -295,6 +350,11 @@ contract PurserPay {
             }
             if (amount == 0) {
                 revert ZeroAmount(i);
+            }
+            // Destination guard: USDT would let a transfer to this frozen address succeed
+            // and trap the funds; revert the whole batch instead.
+            if (IUsdt(usdt).getBlackListStatus(recipient)) {
+                revert DestinationBlacklisted(recipient);
             }
 
             _safeTransferFrom(token, msg.sender, recipient, amount);

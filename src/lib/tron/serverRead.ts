@@ -6,7 +6,13 @@ import {
   NETWORK,
   PENDING_DEPLOYMENT_ADDRESS,
   PURSERPAY_ADDRESS,
+  USDT_ADDRESS,
 } from "./config"
+import { DISPERSE_SELECTOR, parseDisperseCall } from "./disperseCalldata"
+import {
+  readBlacklistStatuses,
+  type BlacklistStatus,
+} from "../security/blacklist"
 
 // Server-side, KEYLESS TRON reads for the payout authorization gate.
 //
@@ -109,6 +115,47 @@ export async function readSubscriptionActive(payer: string): Promise<boolean | n
   } catch {
     return null // unverifiable -> caller fails closed
   }
+}
+
+/**
+ * Read USDT's `getBlackListStatus(dest)` for ONE address over the keyless server node.
+ * Resolves true (frozen) / false (clean); THROWS on any failed/empty read so the caller
+ * maps it to UNVERIFIED (D-7 — a failed read is NEVER treated as safe).
+ *
+ * Reads the SAME USDT the active-network config targets (nile/mainnet seam), independent of
+ * PurserPay's deployment (USDT is deployed on both). A constant-call: nothing signed, no key,
+ * no funds move — non-custodial is untouched.
+ */
+async function readBlacklistOnce(dest: string): Promise<boolean> {
+  const tw = serverClient()
+  const res = (await tw.transactionBuilder.triggerConstantContract(
+    USDT_ADDRESS,
+    "getBlackListStatus(address)",
+    {},
+    [{ type: "address", value: dest }],
+    dest
+  )) as { result?: { result?: boolean }; constant_result?: string[] }
+
+  if (!res?.result?.result) throw new Error("blacklist read failed")
+  const hex = res.constant_result?.[0]
+  if (!hex) throw new Error("blacklist read empty")
+  // A bool constant_result is a 32-byte word: 0 = false (clean), non-zero = true (frozen).
+  return BigInt("0x" + hex) !== 0n
+}
+
+/**
+ * The payout PRE-FLIGHT frozen-address read: classify a batch's destination addresses against
+ * USDT's blacklist, FAIL-SAFE (D-7). Returns a map keyed by address with SAFE / FROZEN /
+ * UNVERIFIED; a read that fails, times out, or is rate-limited is UNVERIFIED, never SAFE.
+ *
+ * This is ADVISORY — the on-chain guard (disperse reverts a frozen destination) is the real
+ * guarantee at sign time. Dedup + bounded concurrency live in the pure `readBlacklistStatuses`;
+ * this only supplies the real reader and reuses the existing TRON_PRO_API_KEY boot gate.
+ */
+export async function readDestinationBlacklist(
+  addresses: string[]
+): Promise<Map<string, BlacklistStatus>> {
+  return readBlacklistStatuses(addresses, readBlacklistOnce)
 }
 
 /**
@@ -227,6 +274,116 @@ export async function verifySubscribeTx(
     return { ok: true, ...details }
   } catch {
     return { ok: false, reason: "read_error" } // unverifiable -> no reward
+  }
+}
+
+/**
+ * Result of inspecting a claimed disperse transaction. On `ok`, the decoded fields are
+ * the AFFILIATE RECEIPT INDEX's source of truth (docs/09): `payer` (agency, base58),
+ * `recipients` (base58) positionally paired with `amounts` (base-unit decimal strings),
+ * and the block time. On `!ok`, `reason` says why for logs.
+ */
+export type DisperseTxCheck = {
+  ok: boolean
+  /** Machine reason when !ok (not_deployed / bad_txid / tx_failed / tx_unknown /
+   *  not_trigger_contract / missing_call_fields / wrong_contract / wrong_selector /
+   *  decode_failed / wrong_token / empty_batch / read_error). */
+  reason?: string
+  /** The paying agency (base58), from owner_address — public on-chain. */
+  payer?: string | null
+  /** Recipients (base58), decoded from the on-chain calldata (never a client claim). */
+  recipients?: string[]
+  /** Amounts (base-unit decimal strings), positionally paired with `recipients`. */
+  amounts?: string[]
+  /** Block time in ms (best-effort, from raw_data.timestamp); null if absent. */
+  blockTimeMs?: number | null
+  /** The decoded 4-byte selector (hex, no 0x), for logs. */
+  selector?: string | null
+}
+
+/**
+ * Verify a claimed disperse transaction, server-side and UNTRUSTING — the one place
+ * the affiliate receipt index is populated. The client posts only a public txid; every
+ * stored field is derived HERE from the tx's own on-chain calldata, so a forged or
+ * unrelated txid can never inject fake receipts.
+ *
+ * `ok` is true ONLY when the tx: is mined and succeeded (getTxOutcome), is a
+ * TriggerSmartContract call TO our PurserPay contract, whose method is
+ * `disperse(address,address[],uint256[])`, whose `token` argument is USDT, with a
+ * non-empty, well-formed recipients/amounts pair. Any mismatch, undecodable calldata,
+ * undeployed contract, or read failure → `{ ok:false, reason, … }` (fail closed:
+ * nothing recorded).
+ *
+ * Reuses the keyless `serverClient()` (no new client, no signing, no key). The disperse
+ * path itself is permissionless and unaffected — this only READS a mined tx.
+ */
+export async function verifyDisperseTx(txid: string): Promise<DisperseTxCheck> {
+  if (!isDeployed()) return { ok: false, reason: "not_deployed" }
+  if (typeof txid !== "string" || txid.trim() === "") return { ok: false, reason: "bad_txid" }
+
+  // 1) It must be mined and successful.
+  const outcome = await getTxOutcome(txid)
+  if (outcome !== "success") return { ok: false, reason: `tx_${outcome}` }
+
+  // 2) It must be a disperse(...) call to PurserPay with the USDT token.
+  try {
+    const tw = serverClient()
+    const tx = (await tw.trx.getTransaction(txid)) as {
+      raw_data?: {
+        timestamp?: number
+        contract?: Array<{
+          type?: string
+          parameter?: {
+            value?: {
+              data?: string
+              owner_address?: string
+              contract_address?: string
+            }
+          }
+        }>
+      }
+    }
+    const c = tx?.raw_data?.contract?.[0]
+    if (!c || c.type !== "TriggerSmartContract") {
+      return { ok: false, reason: "not_trigger_contract" }
+    }
+    const v = c.parameter?.value
+    if (!v?.data || !v.owner_address || !v.contract_address) {
+      return { ok: false, reason: "missing_call_fields" }
+    }
+
+    const selector = normHex(v.data).slice(0, 8)
+    if (normHex(v.contract_address) !== normHex(tw.address.toHex(PURSERPAY_ADDRESS))) {
+      return { ok: false, reason: "wrong_contract", selector }
+    }
+    if (selector !== DISPERSE_SELECTOR) {
+      return { ok: false, reason: "wrong_selector", selector }
+    }
+
+    const parsed = parseDisperseCall(v.data)
+    if (!parsed) return { ok: false, reason: "decode_failed", selector }
+
+    // The disperse `token` arg (low-20-byte hex) must be USDT. tronweb's TRON hex is
+    // 41-prefixed (21 bytes); strip the 41 to compare against the 20-byte ABI form.
+    const wantToken = normHex(tw.address.toHex(USDT_ADDRESS)).replace(/^41/, "")
+    if (parsed.tokenHex20 !== wantToken) {
+      return { ok: false, reason: "wrong_token", selector }
+    }
+    if (parsed.recipientsHex20.length === 0) {
+      return { ok: false, reason: "empty_batch", selector }
+    }
+
+    return {
+      ok: true,
+      payer: safeBase58(tw, v.owner_address),
+      // 41-prefix the decoded 20-byte address to reconstruct the TRON base58 form.
+      recipients: parsed.recipientsHex20.map((h) => safeBase58(tw, "41" + h)),
+      amounts: parsed.amounts,
+      blockTimeMs: typeof tx?.raw_data?.timestamp === "number" ? tx.raw_data.timestamp : null,
+      selector,
+    }
+  } catch {
+    return { ok: false, reason: "read_error" } // unverifiable -> nothing recorded
   }
 }
 

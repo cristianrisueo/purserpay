@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button"
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader"
 import { DeleteDataButton } from "@/components/dashboard/DeleteDataButton"
 import { EmptyRoster } from "@/components/dashboard/EmptyRoster"
+import { ExchangeConfirmDialog } from "@/components/dashboard/ExchangeConfirmDialog"
 import { FreeTierBanner } from "@/components/dashboard/FreeTierBanner"
 import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
-import { ReferralCard } from "@/components/dashboard/ReferralCard"
+import { PreflightBanner } from "@/components/dashboard/PreflightBanner"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { usePayout } from "@/hooks/usePayout"
 import { payoutTitle } from "@/lib/format"
@@ -89,19 +90,14 @@ export function Dashboard() {
               </div>
             ) : null}
 
-            {/* Referral card — entitled wallets only (subscriber or on credit), and
-                only when the reward mechanic is enabled. A free-tier wallet sees the
-                FreeTierBanner's subscribe CTA instead, never this. */}
-            {payout.entitled && payout.referralEnabled && payout.referralCode ? (
-              <div className="mb-5">
-                <ReferralCard
-                  code={payout.referralCode}
-                  monthsBanked={payout.referralMonthsBanked}
-                  qualifiedReferrals={payout.referralQualified}
-                />
-              </div>
-            ) : null}
-
+            {/* NOTE (Sprint 2): the agency→agency referral card was REMOVED here — a
+                paying agency inviting ANOTHER agency for a free month is dead by
+                STRUCTURAL CONFLICT OF INTEREST (an agency won't arm its competitor),
+                not because the incentive was too small. The off-chain credit
+                infrastructure is FROZEN, not dropped (schema + claim path kept, existing
+                credit still honored — see docs/08). The LIVE affiliate→agency referral
+                lives in the payee portal (/portal ReferralPanel + Flex Card QR), a
+                different vector on the same /r/{code} plumbing — see docs/09. */}
             <div className="mb-5">
               <PayoutControls
                 connected={payout.connected}
@@ -129,6 +125,14 @@ export function Dashboard() {
               />
             </div>
 
+            {/* Advisory frozen/exchange/unverified summary — shown only when the selected batch
+                has something to say (zero noise on a clean batch). */}
+            {payout.preflightSummary.anything ? (
+              <div className="mb-3">
+                <PreflightBanner summary={payout.preflightSummary} />
+              </div>
+            ) : null}
+
             <PayoutTable
               data={payout.roster}
               rowSelection={payout.rowSelection}
@@ -141,6 +145,10 @@ export function Dashboard() {
               verifyByPayee={payout.verifyByPayee}
               rowBlocked={payout.rowBlocked}
               rowOfacFlagged={payout.rowOfacFlagged}
+              rowExchange={payout.rowExchange}
+              rowFrozen={payout.rowFrozen}
+              rowUnverified={payout.rowUnverified}
+              preflightChecking={payout.preflightChecking}
               rowTxState={payout.rowTxState}
               txidByPayee={payout.txidByPayee}
               payRow={payout.payRow}
@@ -191,6 +199,13 @@ export function Dashboard() {
       <OfacBlockedDialog
         flagged={payout.ofacFlagged}
         onDismiss={payout.dismissOfac}
+      />
+      {/* Accept-and-pay for exchange-looking rows — the disclaimer at decide-time. Frozen rows
+          never reach here (Pay disabled + the pre-flight halts the batch first). */}
+      <ExchangeConfirmDialog
+        confirm={payout.exchangeConfirm}
+        onConfirm={payout.confirmExchangeAndPay}
+        onCancel={payout.cancelExchangeConfirm}
       />
     </div>
   )

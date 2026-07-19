@@ -65,22 +65,34 @@ This is Tier 1 and it is absolute — the server-side architecture below changes
 nothing about it. Purser gains a backend to hide API keys, screen for OFAC, and gate
 the subscription; it never gains custody of funds, keys, or broadcast.
 
-**Data dissociation — we store nothing we can read.** Two tiers of data, two rules:
+**Data dissociation — we store nothing we can read.** Three kinds of data, one rule
+(dissociate or keep off-server):
 
 - The **team roster** (payee names, addresses, amounts) stays **device-local**
-  (IndexedDB). It is never sent to a server in readable form — the batch the client
-  chooses to build is the only thing that ever leaves the browser, and it leaves as a
-  transaction they sign themselves.
+  (IndexedDB). It is never sent to a server in readable form — the only things that leave the
+  browser are the batch the client chooses to build (as a transaction they sign themselves) and,
+  after it confirms, the **public txid** of that transaction (so the affiliate receipt index can
+  record it — see below). Names and cleartext recipient wallets never leave the device.
 - The **account holder's own PII** (name, country, tax ID) persists in **Supabase,
   encrypted at rest (pgcrypto AES-256)**; the free-tier quota and referral credit persist as
   **salted-hashed, no-PII rows**; wallet addresses touched for OFAC screening are
   **salted-SHA-256 hashed** before any persistence. (Subscription state is **on-chain**, read
   live — NOT stored in Supabase; magic-link auth is the chosen method but not yet wired.)
   Purser stores nothing it can read, and nothing that ties a person to their payouts.
+- The **affiliate receipt index** (`disperse_receipts`, Sprint 1A — see
+  [`docs/09`](./docs/09-affiliate-portal.md)) is a **dissociated, forward-only** record of who
+  was paid, populated at pay time from the disperse tx's **public on-chain calldata**: it holds
+  `hash(recipient) + amount + payer_wallet + txid` — **salted-hashed recipients, no names, no
+  cleartext recipient wallets**. This is a deliberate, bounded modification of the "roster never
+  leaves the device" line: the **roster** (what the agency types) still never leaves the device;
+  this index is a *different* thing (hashed, on-chain-derived, no PII), and it exists only so a
+  payee can prove — behind their **own** wallet signature — that they were paid through PurserPay.
 
 If a task ever seems to require holding funds/keys, broadcasting on the client's
-behalf, storing the **roster** server-side, or storing **readable** PII — STOP and
-flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
+behalf, storing the **roster** (names/amounts the agency types) server-side, or storing
+**readable** PII — STOP and flag it. Encrypted/hashed dissociation is the only server storage
+ever allowed — the affiliate receipt index qualifies (hashed recipients + public on-chain data,
+never the roster).
 
 > Note: the landing copy has been reconciled to the dissociation story — it now says the
 > **money never leaves your wallet** and the **roster never leaves your device**, not the
@@ -160,6 +172,10 @@ flag it. Encrypted/hashed dissociation is the only server storage ever allowed.
 - Muted text: `#615C57`
 - Hairline / border: `#E5E2DD`
 - Success ("paid" rows only): `#2F9E6B`
+- Warning / caution (amber — the pre-flight **exchange advisory ONLY**): `#B7791F` (`--warning`,
+  added S-3). It is the "caution, not error" color; it is **never** used for a paid/ready state
+  (green stays paid-only) and never for a hard block (that is error-red). See the visual doctrine
+  in STANDING FACTS.
 - Type: **Inter Tight** throughout. Sentence case. NOT uppercase-condensed.
 - Radii: soft, 10–14px. Subtle warm shadows allowed. Flat, clean, modern SaaS.
 
@@ -292,7 +308,7 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   `signMessageV2`, recovered server-side) checked **before** OFAC / subscription / quota /
   credit. It stores only a salted nonce hash (no PII, 5-min TTL). This is **wallet-control
   proof, not an auth session** — magic-link account auth stays unwired. See docs/07 §4a.
-- Referrals: **asymmetric, off-chain credit.** A paying customer's referral link banks them
+- Referrals: **asymmetric, off-chain credit.** A referral link banks the referrer
   **one free month** when someone they invited **pays their first month on-chain**; the invitee
   gets **no discount** (full price). The reward is fixed at **one month per qualified referral**
   because reward (150 USDT of value) must never exceed the referee's cost (150 USDT on-chain) —
@@ -301,9 +317,58 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   never deny it, and a credit-activated month never earns another reward. Behind
   `REFERRALS_ENABLED` (default off). The **contract is untouched** — the chain stays the source of
   truth for payments. See `docs/08-referrals-and-credit.md`.
+  **Sprint 2 — the agency→agency channel is retired.** The **agency dashboard invite card**
+  (a paying 150-USDT/mo agency inviting **another agency** for a free month) was **removed** — dead
+  by **STRUCTURAL CONFLICT OF INTEREST** (an agency won't hand its direct competitor the tool),
+  **NOT** because "the incentive was too small" (never re-open it by raising the reward). The credit
+  **infrastructure is FROZEN, not dropped**: schema, credit columns, and the claim path all stay;
+  existing credit is still honored monotonically; `REFERRALS_ENABLED` is unchanged. The **live**
+  referral vector is the **affiliate→agency** portal (a *payee* referring the agencies they work
+  with — not a competing agency, so no conflict), which reuses the **same** `/r/{code}` +
+  `referral_accounts` plumbing and was **unaffected** by the removal (`docs/09`). Other agency-side
+  vectors (agency → a **non-competing** partner / supplier / a colleague in another geography) are
+  **POSTPONED, not killed**, pending real trench data.
 - Storage: the **roster stays device-local** (IndexedDB); **account-holder PII is
   stored server-side encrypted** (pgcrypto AES-256 — dissociation); recipient addresses
-  are salted-hashed for OFAC. Purser stores nothing it can read.
+  are salted-hashed for OFAC. Since Sprint 1A there is also a **dissociated, forward-only
+  affiliate receipt index** (`disperse_receipts`) holding `hash(recipient) + amount + payer +
+  txid`, all derived from **public on-chain disperse calldata** — hashed recipients, no names, no
+  cleartext recipient wallets, **NOT the roster**. Purser still stores nothing it can read.
+- Affiliate portal (Sprint 1A skeleton + Sprint 1B PDF — `docs/09`): a payee-facing **`/portal`**
+  (one fixed URL, no code in it, no cookies) shows a payee their **disperse-anchored receipts**
+  behind **their own wallet signature** (REUSES the payout challenge with a `purpose="portal"`
+  message that authorizes no on-chain action; keyed on `hash(signer)`, so no one sees another
+  payee's income). Below the receipts: a copy-only viral banner + the payee's opaque `/r/{code}`
+  share link. Referring an agency banks a **manual bounty** (50 USDT/mo × 6) in a **grant-only**
+  ledger (`affiliate_bounties`) the owner settles by hand — a **debt accumulator**, NOT a
+  wallet/on-chain balance, and it can never gate a payee's access to their receipts. `/r/[code]`
+  is **untouched**. This whole system rides on an **UNVERIFIED hypothesis** (the payee values the
+  receipt; the bounty gives leverage) pending the first real customer conversation.
+- Receipt PDF + verification (Sprint 1B — `docs/09` §5): each receipt downloads as a **PDF "proof
+  of source of funds"** (NOT a tax/invoice/legal document) via `POST /api/affiliate/receipt`,
+  gated by a **fresh `purpose="portal"` signature per download** (the 1A nonce is single-use — no
+  session token, no second gate) and keyed on `hash(signer)` + txid, so no raw-txid/raw-wallet URL
+  can pull anyone's receipt. **Every field comes from the chain-derived index, never the request;
+  the PDF is streamed and NEVER stored** (no new storage surface — 1B adds only an `audit_id`
+  column + two read RPCs, no new stored data). The recipient wallet prints **truncated** (owner
+  decision). Each PDF carries a deterministic, unforgeable **Audit ID** = `PP-` + first 16 hex of
+  `sha256(txid + ":" + hash(recipient))` (a **generated STORED column** — SQL is the source of
+  truth) and a QR to the **public, read-only `/verify/[txid]?a=<auditId>`** page, which reads the
+  amount from the index (chain truth, never a query param) so a **Photoshopped amount is exposed**
+  (anti-D4) and leaks nothing beyond the public txid. Deps: **pdf-lib + qrcode-generator** (the
+  only 1B additions). Public product copy is **untouched**.
+- Flex Card (Sprint 1C — `docs/09` §6): a **secondary** "Share" button per receipt generates a
+  **1200×630 branded image** (`POST /api/affiliate/flex`, `next/og`) the payee posts to
+  Twitter/Telegram — a deliberately cheap **viral-loop experiment**. Same gate as 1B (fresh portal
+  signature, keyed on `hash(signer)`); **generated on the fly, never stored; no migration, no new
+  stored data**. A **mandatory privacy toggle** picks how the amount shows — **hidden** ("N-figure
+  payment", the SAFE default), **range** ("+X USDT"), or **exact** — and the **recipient wallet
+  appears in NO mode** (the pure `flexModel` never even receives an address). The QR is the opaque
+  **`/r/{code}`** (never a wallet); copy is honest ("cobra sin comisiones de intermediario", not a
+  "free" overpromise); an **exact** card prints the **Audit ID + a `/verify` reference** so the
+  "On-Chain Verified" badge is checkable (anti-montage, D4.1). Brand paint (bone/ink/aqua, **Inter
+  Tight** via a vendored static woff — Satori can't use woff2); **no new image library**. Public
+  product copy is **untouched**. Rides on the same **UNVERIFIED hypothesis** as the rest of the portal.
 - The contract is **ours** (not a third party's). Its **`disperse` path is permissionless
   and immutable** and it never takes custody. The owner-privileged surface is the
   **subscription fees + the treasury destination** (`updateSubscriptionFees` +
@@ -314,6 +379,46 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
 - The batch is **atomic**: all recipients paid in one tx, or none. No partial payout.
   Check balance ≥ sum-of-selected BEFORE enabling "Pay all"; if short, lock the button
   and say how much is missing — never silently drop payees.
+- The `disperse` **rejects Tether-frozen (blacklisted) destinations on-chain** (S-1). Real USDT
+  does NOT check the destination — a transfer to a frozen address SUCCEEDS and traps the funds
+  forever — so `disperse` reads the blacklist in the same tx and reverts the whole batch
+  (`DestinationBlacklisted`), names a frozen payer (`SenderBlacklisted`), and is **USDT-only**
+  (`token` must equal the immutable `usdt`, else `UnsupportedToken`). Atomic: a frozen row rolls
+  the batch back, no trapped funds; the guard only *rejects*, never redirects — non-custodial is
+  untouched. **Built + tested, NOT deployed:** it changes the bytecode, so a mainnet **redeploy
+  (S-4) is required** — today's mainnet contract is superseded once S-4 runs, and
+  `feeLimitForBatch()` must be recalibrated with the guard included at deploy.
+- The dashboard's **pre-flight preview is ADVISORY; the on-chain guard is the guarantee** (S-2).
+  It reads each destination's USDT blacklist server-side and flags likely exchange addresses, but a
+  blacklist read that fails/times-out/rate-limits is **`UNVERIFIED`, never SAFE** (D-7 — a failure
+  never renders green), and exchange detection is a **best-effort tagged-address heuristic** (catches
+  labelled hot/cold wallets, NOT per-user deposit addresses; doesn't know credit policy → the
+  disclaimer stays generic). `previewBatch` classifies rows in the **same order as the S-1 guard**
+  (sender-frozen first, then per-row destination-frozen), so preview and execution never disagree.
+  Reads only — non-custodial untouched. (Logic in `src/lib/security/*`; the S-3 dashboard renders it.)
+- **S-3 visual doctrine (owner-CLOSED — the dashboard rendering of the pre-flight).** **GREEN = PAID,
+  and ONLY paid** — a clean/ready row shows **no** security badge (absence of alarm = ok); there is
+  never a "green = safe/ready". **Frozen severity is ALWAYS visible, never hover-only** (a red badge
+  that replaces the validation line + a disabled Pay; the row stays removable). **Hover is only for
+  what does NOT block** (the amber `--warning` **exchange** advisory, the muted **unverified** state).
+  The blacklist read runs at **pay-initiation** (`preflightThenPay`, a GATE -1 before the wallet-proof
+  gate) — never per keystroke — while exchange detection is pure/always-live; readings **accumulate
+  per address**, cleared on any roster change. A batch with a **frozen** row can **never** be
+  signed (`hasBlockingRow`); the exchange disclaimer lands at **decide-time** (accept-and-pay), not in
+  a tooltip. Add/edit requires confirming a **new/changed** address's **last 6 chars** (anti
+  clipboard-malware). Pure decision logic in `src/lib/security/preflightView.ts` (node-tested); UI in
+  `columns.tsx` · `PreflightBanner.tsx` · `ExchangeConfirmDialog.tsx` · `PayeeFormDialog.tsx`. Still
+  reads only — non-custodial untouched.
+- The roster **guarantees unique addresses**, enforced at **insertion** (`src/lib/rosterDedupe.ts`,
+  the single source of truth) — since the atomic batch is built straight from the roster, the same
+  wallet twice would be a **silent double-payment**. "Duplicate" = the same base58 string, matched
+  **case-sensitively** (case-only difference = a *different* wallet). The rule is **RETAIN, never
+  DISCARD**: manual add/edit **rejects** a colliding address with a named error before persisting
+  (an edit keeping its *own* address is allowed); CSV import **imports the uniques and holds back
+  every row of a shared-address group** (never auto-picks a winner), surfacing each by file row
+  number to resolve and re-add. Dedupe is **within the incoming file** (a full overwrite replaces
+  the prior roster anyway). This is insertion-time validation only — it does **not** touch the
+  non-custodial money path.
 
 ---
 
@@ -365,6 +470,11 @@ flag it to the owner first.
   authoritative — cross-check a doc claim against the referenced file before acting on it.
 - **Write a descriptive `sprint_report.txt` after every major task** (what changed,
   decisions, guardrails honored, blockers, verification).
+- **The root `Makefile` is convenience only** — every target is a thin alias over a
+  `package.json` script (the source of truth): `make up`/`down` (DB + foreground dev),
+  `make check` (typecheck+lint+test+build), `make db-*` (the Supabase scripts). It adds NO
+  behavior. Change a script in `package.json` and the alias follows; never let the Makefile
+  drift from, or diverge in behavior from, the scripts. `make help` lists the targets.
 
 ---
 

@@ -186,8 +186,9 @@ The refund path, so a mistake never burns the one free slot:
   identifies (guarded by `consumedAt`), so a newer consume is never wiped. A subscriber
   never consumed a slot, so never calls this.
 
-The client (`src/hooks/usePayout.ts` → `runPayment`) captures the broadcast txid and, on a
-failed/rejected free-mode payout, calls release with `txid` (or `null`).
+The client (`src/hooks/usePayout.ts` → `executePayout`, the signing path reached after the S-3
+pre-flight gate `preflightThenPay`) captures the broadcast txid and, on a failed/rejected free-mode
+payout, calls release with `txid` (or `null`).
 
 ## 6. The client (free mode)
 

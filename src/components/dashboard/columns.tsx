@@ -1,5 +1,5 @@
 import type { ColumnDef, RowData } from "@tanstack/react-table"
-import { FileText, Globe, LoaderCircle } from "lucide-react"
+import { Ban, FileText, Globe, HelpCircle, Landmark, LoaderCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -8,6 +8,7 @@ import { formatUsdt, truncateAddress } from "@/lib/format"
 import type { PayeeInput } from "@/lib/payeeValidation"
 import type { Payee } from "@/lib/roster"
 import type { BlockReason, TxState } from "@/hooks/usePayout"
+import { rowSecurityFor } from "@/lib/security/preflightView"
 import { txExplorerUrl } from "@/lib/tron/config"
 import type { VerifyLevel } from "@/lib/tron/validation"
 
@@ -31,6 +32,15 @@ declare module "@tanstack/react-table" {
     rowBlocked: Map<string, BlockReason>
     /** payees whose address matched the OFAC list (advisory; pay-time gate blocks). */
     rowOfacFlagged: Map<string, true>
+    /** payees whose address is a known exchange (advisory, amber; never blocks). Pure/always-live. */
+    rowExchange: Map<string, string>
+    /** payees whose destination is Tether-frozen (from the pay-time read; red, ALWAYS visible,
+     *  blocks the row). A payment here would be trapped forever. */
+    rowFrozen: Map<string, true>
+    /** payees whose blacklist read failed/absent (D-7; muted, advisory, never green, never blocks). */
+    rowUnverified: Set<string>
+    /** true while the pay-time blacklist read is in flight (a neutral "checking" state per row). */
+    preflightChecking: boolean
     /** live tx state per payee id during a payout. */
     rowTxState: Map<string, TxState>
     /** tx hash per payee id (for the Tronscan link on a paid/pending row). */
@@ -89,8 +99,20 @@ export const columns: ColumnDef<Payee>[] = [
     header: "Address",
     cell: ({ row, table }) => {
       const meta = table.options.meta!
-      const level = meta.verifyByPayee.get(row.original.id) ?? "valid-format"
-      const sanctioned = meta.rowOfacFlagged.has(row.original.id)
+      const id = row.original.id
+      const level = meta.verifyByPayee.get(id) ?? "valid-format"
+      const sanctioned = meta.rowOfacFlagged.has(id)
+      // The frozen/exchange/unverified security state (S-3). `checking` is scoped to selected rows
+      // so a whole-batch read doesn't paint an unrelated row "Checking…". Exchange is orthogonal
+      // (pure/always-live) and renders as its own amber chip alongside the validation line.
+      const sec = rowSecurityFor({
+        frozen: meta.rowFrozen.has(id),
+        unverified: meta.rowUnverified.has(id),
+        checking: meta.preflightChecking && row.getIsSelected(),
+        exchange: meta.rowExchange.get(id),
+      })
+      const chip =
+        "inline-flex w-fit items-center gap-1 text-[11.5px] font-medium leading-none"
       return (
         <div className="flex min-w-0 flex-col gap-1">
           <span
@@ -103,8 +125,49 @@ export const columns: ColumnDef<Payee>[] = [
             <span className="inline-flex w-fit items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
               Sanctioned — blocked
             </span>
+          ) : sec.kind === "frozen" ? (
+            // Frozen is a hard block — red, ALWAYS visible (never hover-only). It REPLACES the
+            // validation line; the row's Pay is disabled and it must be removed to continue.
+            <span
+              className={cn(chip, "font-semibold text-destructive")}
+              title="Tether has frozen this address; a payment would be trapped forever. Remove it to continue."
+            >
+              <Ban className="size-3.5" aria-hidden="true" />
+              Frozen (Tether)
+            </span>
           ) : (
-            <VerifyBadge level={level} />
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <VerifyBadge level={level} />
+              {sec.exchange ? (
+                // Advisory only (amber) — does NOT replace the line, does NOT block. Honest about
+                // partial coverage (S-2 GAP): "looks like" an exchange, credit policy unknown.
+                <span
+                  className={cn(chip, "text-warning")}
+                  title="This looks like an exchange deposit address. Verify your exchange credits transfers from contracts, or the payee may not see the payment."
+                >
+                  <Landmark className="size-3.5" aria-hidden="true" />
+                  Exchange?
+                </span>
+              ) : null}
+              {sec.kind === "checking" ? (
+                <span className={cn(chip, "text-muted-foreground")}>
+                  <LoaderCircle
+                    className="size-3 animate-spin"
+                    aria-hidden="true"
+                  />
+                  Checking…
+                </span>
+              ) : sec.kind === "unverified" ? (
+                // D-7 in the UI: couldn't confirm safe → neutral, never green, never blocking.
+                <span
+                  className={cn(chip, "text-muted-foreground")}
+                  title="Couldn't verify this address right now — it'll be checked again on-chain when you pay."
+                >
+                  <HelpCircle className="size-3.5" aria-hidden="true" />
+                  Unverified
+                </span>
+              ) : null}
+            </div>
           )}
         </div>
       )
@@ -152,7 +215,10 @@ export const columns: ColumnDef<Payee>[] = [
         meta.wrongNetwork ||
         meta.paying ||
         Boolean(blocked) ||
-        meta.rowOfacFlagged.has(id)
+        meta.rowOfacFlagged.has(id) ||
+        // A Tether-frozen destination joins the "can't pay" set (a payment would be trapped).
+        // The row is still removable; it can never reach a signature (see usePayout's guard).
+        meta.rowFrozen.has(id)
 
       // Icon button (globe = opens the tx on the Tronscan website). The hover
       // title + aria-label carry the meaning; Slot forwards them onto the <a>.

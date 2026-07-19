@@ -11,6 +11,7 @@
 // failure or a wallet rejection — the payout gate stays fail-closed.
 
 import { getWalletProvider, type WalletProviderId } from "@/lib/tron/wallet"
+import type { ChallengePurpose } from "@/lib/payout/challengeMessage"
 import { PurserError } from "@/lib/tron/errors"
 
 export type WalletControlProof = { nonce: string; signature: string }
@@ -20,21 +21,27 @@ type ChallengeResponse = { nonce?: unknown; message?: unknown; expiresAt?: unkno
 /**
  * Prove the connected wallet controls `address`.
  *
- * 1) GET /api/payout/challenge?address= → { nonce, message }.
+ * 1) GET /api/payout/challenge?address=&purpose= → { nonce, message }.
  * 2) Sign `message` with the wallet (signMessageV2 — one prompt).
+ *
+ * `purpose` selects which message the wallet signs (default "payout", unchanged for
+ * the dashboard gate; "portal" for the affiliate receipt-viewer). The verifier for
+ * that purpose recovers the signer and asserts control before acting.
  *
  * Throws a calm PurserError on a challenge/transport failure or a wallet rejection.
  * The caller catches it, shows the message, and sends nothing.
  */
 export async function proveWalletControl(
   providerId: WalletProviderId,
-  address: string
+  address: string,
+  purpose: ChallengePurpose = "payout"
 ): Promise<WalletControlProof> {
   let data: ChallengeResponse | null
   try {
-    const res = await fetch(`/api/payout/challenge?address=${encodeURIComponent(address)}`, {
-      headers: { accept: "application/json" },
-    })
+    const res = await fetch(
+      `/api/payout/challenge?address=${encodeURIComponent(address)}&purpose=${purpose}`,
+      { headers: { accept: "application/json" } }
+    )
     data = (await res.json().catch(() => null)) as ChallengeResponse | null
     if (!res.ok || typeof data?.nonce !== "string" || typeof data?.message !== "string") {
       throw new PurserError(

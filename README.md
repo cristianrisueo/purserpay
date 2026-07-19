@@ -65,6 +65,12 @@ action, zero fear, beauty = trust.
   holder's **own PII** is stored **encrypted** (pgcrypto AES-256); wallet addresses touched
   for screening are **salted-SHA-256 hashed**. Identity is separated from payout activity
   by schema design.
+- **The affiliate receipt portal** ([`docs/09`](./docs/09-affiliate-portal.md)) adds a
+  **dissociated, forward-only** index of who was paid — `hash(recipient) + amount + payer + txid`,
+  all from **public on-chain disperse calldata** (hashed recipients, no names, **not the
+  roster**) — so a payee can prove, behind **their own** wallet signature at `/portal`, that they
+  were paid through PurserPay. The downloadable **PDF proof** truncates the recipient wallet, and
+  its public **`/verify`** page exposes nothing beyond what the batch txid already shows on-chain.
 - **The private double-check.** The ✓✓ "paid-before" read sends only the operator's *own*
   wallet to the node and matches payee addresses **locally** — payee addresses are never
   transmitted.
@@ -84,27 +90,41 @@ action, zero fear, beauty = trust.
 | Account + compliance | Supabase (Postgres + pgcrypto) |
 | Web3 | tronweb 6 + TronLink (WalletConnect stubbed) |
 | Contract | own `PurserPay.sol` (Foundry) — `disperse` + `subscribe` |
-| Chain | **TRON only**, **USDT (TRC20) only** — network chosen at build time by `NEXT_PUBLIC_TRON_NETWORK` (`mainnet \| nile`); contract deployed on **both** (mainnet `TLdySJX…`, nile `TK9z…`). The mainnet contract is live + wired; the production Vercel env flip is still pending |
+| Chain | **TRON only**, **USDT (TRC20) only** — network chosen at build time by `NEXT_PUBLIC_TRON_NETWORK` (`mainnet \| nile`); contract deployed on **both** (mainnet `TLdySJX…`, nile `TK9z…`). The mainnet contract is live + wired — but it is the **pre-S-1-guard** build, superseded by a guarded redeploy (**S-4**; see [`docs/05`](./docs/05-smart-contract.md) · [`06`](./docs/06-deployment.md) §6); the production Vercel env flip is still pending |
 | Billing | on-chain subscription: **150 USDT/mo** or **1,500 USDT/yr** (no fiat, no Stripe) |
 | Free tier | **1 payee / payer wallet / 30 days**, forever — a mainnet smoke test. Off-chain licence gate ([`docs/07`](./docs/07-freemium-gate.md)); everything else needs the subscription. |
-| Referrals | asymmetric: a paying customer's first-paid referral banks them **one free month** (off-chain credit); the invitee pays full price. Reward == referee cost (**1:1**, self-referral is zero-margin). Behind `REFERRALS_ENABLED` ([`docs/08`](./docs/08-referrals-and-credit.md)). |
+| Referrals | **Agency→agency invite UI RETIRED (Sprint 2)** — a paying agency inviting a competitor is dead by **structural conflict of interest**, not "too small an incentive". The off-chain credit infra (asymmetric, 1:1 reward == referee cost, monotonic) is **frozen, not dropped**: schema kept, existing credit still honored, `REFERRALS_ENABLED` unchanged ([`docs/08`](./docs/08-referrals-and-credit.md)). The **live** referral vector is now the **affiliate→agency** portal (a payee refers agencies, [`docs/09`](./docs/09-affiliate-portal.md)) on the same `/r/{code}` plumbing. |
 
 - Landing `/` is server-rendered; the dashboard `/dashboard` is client-only (`ssr:false`)
   because it reads IndexedDB and the injected wallet at mount.
-- Every payout funnels through one 3-gate choke-point: **entitlement (subscription or
-  referral credit) → OFAC → disperse** (`src/hooks/usePayout.ts`). See
-  [`docs/03`](./docs/03-data-flow.md).
+- Every payout funnels through one choke-point, `preflightThenPay` → `executePayout`
+  (`src/hooks/usePayout.ts`), in this order: an advisory **pre-flight** (frozen/exchange
+  preview) → **wallet-control proof** → **OFAC** → **entitlement (subscription or referral
+  credit) / free-tier** → **disperse**. See [`docs/03`](./docs/03-data-flow.md) §4.
+
+- The payee **affiliate portal** `/portal` is client-only (`ssr:false`) too — a payee proves
+  wallet control with one signature and sees their disperse-anchored receipts
+  ([`docs/09`](./docs/09-affiliate-portal.md)). `/r/[code]` (agency attribution) is unchanged.
+- Each receipt downloads as a **PDF proof of funds** (`POST /api/affiliate/receipt`, gated by a
+  fresh portal signature, **generated on the fly and never stored**) carrying a verifiable
+  **Audit ID** and a QR to the **public `/verify/[txid]`** page, which shows the real on-chain
+  amount so a tampered PDF is exposed ([`docs/09` §5](./docs/09-affiliate-portal.md)). Built with
+  `pdf-lib` + `qrcode-generator` (the only 1B deps).
+- Each receipt also generates a shareable **Flex Card** image (`POST /api/affiliate/flex`, same
+  gate, `next/og`, **on the fly, never stored**) for Twitter/Telegram, behind a **mandatory
+  privacy toggle** (hidden / range / exact; safe default) — the recipient wallet appears on it in
+  **no** mode; the QR is the opaque `/r/{code}` ([`docs/09` §6](./docs/09-affiliate-portal.md)).
 
 ```
 src/
-  app/            # routes + "use server" compliance actions
+  app/            # routes + "use server" compliance actions · api/affiliate · portal/ · verify/[txid]/
   views/          # Landing (SSR) · Dashboard (client-only)
   hooks/          # usePayout — the state machine
-  components/     # landing/ · dashboard/ · ui/ (shadcn, owned)
-  lib/            # db (Dexie) · crypto · receipts · supabase/ · tron/
+  components/     # landing/ · dashboard/ · portal/ · ui/ (shadcn, owned)
+  lib/            # db (Dexie) · crypto · receipts · supabase/ · tron/ · affiliate/ (portal · receiptPdf · auditId · verify · flexModel · flexCard · fonts/)
 contracts/        # Foundry: PurserPay.sol + tests
 scripts/tron/     # deploy / verify / measure
-supabase/         # 0001 compliance · 0002 free tier · 0003 referrals
+supabase/         # 0001 compliance · 0002 free tier · 0003 referrals · 0004 challenges · 0005 affiliate portal · 0006 receipt audit
 docs/             # ← architectural source of truth (start here)
 ```
 
@@ -123,7 +143,19 @@ npm run lint
 npm run db:reset                      # re-apply migrations to an empty local db
 npm run db:stop                       # stop local Supabase
 
-cd contracts && forge build && forge test -vv   # 30 tests (29 unit + 1 invariant)
+cd contracts && forge build && forge test -vv   # 36 tests (35 unit + 1 invariant)
+```
+
+### Quickstart with make (convenience aliases)
+
+`make` wraps the daily rituals above — bare `make` (or `make help`) lists them. Each target is a
+thin alias over the `npm run` scripts, which stay the source of truth and keep working standalone.
+
+```bash
+make up          # start working: local DB (Docker) then the dev server (Ctrl-C stops the server)
+make down        # stop the local DB/containers
+make check       # green-gate before commit: typecheck + lint + test + build
+make db-reset    # re-apply migrations to an empty local DB   ·   make db-status  # local URL/keys
 ```
 
 **Local development runs against a local Supabase (Docker), never the production project** — so
@@ -138,7 +170,7 @@ the contract / switching networks is in [`docs/06`](./docs/06-deployment.md).
 ## Documentation map
 
 - [`docs/`](./docs) — **architectural source of truth** (architecture, data-flow,
-  compliance, contract, deployment, free tier, referrals). Start at
+  compliance, contract, deployment, free tier, referrals, affiliate portal). Start at
   [`docs/README.md`](./docs/README.md).
 - [`CLAUDE.md`](./CLAUDE.md) — product philosophy, governance rules, standing facts, the 3
   Laws of UX, and "not in V1".

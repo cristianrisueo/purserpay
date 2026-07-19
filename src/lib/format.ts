@@ -9,6 +9,13 @@ export function truncateAddress(address: string, lead = 6, tail = 5): string {
   return `${address.slice(0, lead)}…${address.slice(-tail)}`
 }
 
+/** The last `n` characters of an address — the "confirm this is correct" tail shown on add/edit
+ *  to kill a pasted-corrupted (clipboard-malware) address. Safe on short/empty strings. */
+export function lastChars(address: string, n = 6): string {
+  if (typeof address !== "string") return ""
+  return address.slice(-n)
+}
+
 /** Human long date, e.g. "July 10, 2026". Defaults to today. */
 export function formatLongDate(when: number | Date = new Date()): string {
   const date = typeof when === "number" ? new Date(when) : when

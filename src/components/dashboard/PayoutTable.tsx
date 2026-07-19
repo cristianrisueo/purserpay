@@ -34,6 +34,10 @@ type PayoutTableProps = {
   verifyByPayee: Map<string, VerifyLevel>
   rowBlocked: Map<string, BlockReason>
   rowOfacFlagged: Map<string, true>
+  rowExchange: Map<string, string>
+  rowFrozen: Map<string, true>
+  rowUnverified: Set<string>
+  preflightChecking: boolean
   rowTxState: Map<string, TxState>
   txidByPayee: Map<string, string>
   payRow: (id: string) => void
@@ -54,6 +58,10 @@ export function PayoutTable({
   verifyByPayee,
   rowBlocked,
   rowOfacFlagged,
+  rowExchange,
+  rowFrozen,
+  rowUnverified,
+  preflightChecking,
   rowTxState,
   txidByPayee,
   payRow,
@@ -78,6 +86,10 @@ export function PayoutTable({
       verifyByPayee,
       rowBlocked,
       rowOfacFlagged,
+      rowExchange,
+      rowFrozen,
+      rowUnverified,
+      preflightChecking,
       rowTxState,
       txidByPayee,
       payRow,

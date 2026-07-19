@@ -6,6 +6,7 @@ import {
   validatePayeeShape,
   type PayeeInput,
 } from "@/lib/payeeValidation"
+import { splitByAddress } from "@/lib/rosterDedupe"
 
 export type FieldKey = "name" | "role" | "address" | "amount"
 
@@ -98,15 +99,18 @@ export function parseCsvTable(text: string): TableParseResult {
 }
 
 export type MappingApplyResult =
-  | { ok: true; rows: PayeeInput[] }
+  | { ok: true; rows: PayeeInput[]; conflicts: string[] }
   | { ok: false; errors: string[] }
 
 /** Builds validated payee rows from the raw table using the user's own
  *  column mapping. Reuses the exact same validatePayeeShape rules as the
- *  manual add/edit form, and collects ALL row errors in one pass — never a
- *  silent partial import. Caller is expected to only call this once every
- *  required field has been mapped (see describeMappingCollision + the
- *  missing-fields check in the dialog); this still guards defensively. */
+ *  manual add/edit form, and collects ALL shape errors in one pass (any shape
+ *  error blocks the whole import). Once shapes pass, it dedupes WITHIN the file:
+ *  `rows` is the unique addresses (imported) and `conflicts` names the rows held
+ *  back for sharing an address (retained, never discarded — see splitByAddress).
+ *  Caller is expected to only call this once every required field has been mapped
+ *  (see describeMappingCollision + the missing-fields check in the dialog); this
+ *  still guards defensively. */
 export function applyMapping(
   table: RawCsvTable,
   mapping: ColumnMapping
@@ -150,7 +154,17 @@ export function applyMapping(
     }
   }
 
-  return { ok: true, rows }
+  // Dedupe within the file. RETENTION, not discard: every row sharing an address
+  // is held back (none imported) so a duplicate never silently picks a winner;
+  // the user resolves and re-adds those. Because replaceRoster is a clear +
+  // bulkAdd of the whole file, "import uniques + retain duplicates" means write
+  // ONLY the non-conflicting rows and surface the conflicting ones for the user
+  // to fix. Every shape error already returned above, so here rows[i] maps 1:1 to
+  // table.rows[i] and the file row number is i + 2 (header + 1-based), matching
+  // the "Row ${i + 2}" shape messages.
+  const split = splitByAddress(rows, (i) => i + 2)
+  const uniques = split.uniqueIndices.map((i) => rows[i])
+  return { ok: true, rows: uniques, conflicts: split.conflicts }
 }
 
 /** Blocks a mapping where two different fields point at the identical

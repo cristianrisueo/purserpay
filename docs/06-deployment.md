@@ -14,7 +14,9 @@
   **Both networks now carry the deployed contract** (mainnet `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`,
   nile `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX`). The mainnet contract is live on-chain and wired in
   `config.ts`, but the **production Vercel env flip** (`NEXT_PUBLIC_TRON_NETWORK=mainnet`) is still
-  pending — so customers are not on mainnet yet.
+  pending — so customers are not on mainnet yet. **Note:** `TLdySJX…` is the **pre-S-1-guard**
+  bytecode; the S-1 frozen-address guard requires a mainnet **redeploy (S-4)** that supersedes it —
+  see §6 and [`05`](./05-smart-contract.md).
 - **DB:** Supabase (compliance/PII). Roster is device-local (no deploy concern).
 
 ### The two-environment model (production vs local development)
@@ -49,10 +51,10 @@ the hashes collide even across separate databases — dev uses a **fresh, distin
 ```bash
 npm install
 cp .env.local.example .env.local     # use the LOCAL DEVELOPMENT block (points at local Supabase)
-npm run db:start                     # boot local Supabase (Docker) — applies migrations 0001–0004
+npm run db:start                     # boot local Supabase (Docker) — applies migrations 0001–0006
 npm run dev                          # Next dev server (localhost = nile + local Supabase)
 npm run typecheck                    # tsc --noEmit
-npm run build                        # production build (14 routes)
+npm run build                        # production build (19 routes)
 npm run lint                         # eslint
 ```
 
@@ -73,7 +75,7 @@ Contracts (Foundry):
 ```bash
 cd contracts
 forge build                          # → out/PurserPay.sol/PurserPay.json (istanbul bytecode)
-forge test -vv                       # 26 tests (25 unit + 1 invariant)
+forge test -vv                       # 36 tests (35 unit + 1 invariant)
 ```
 
 ## 3. Environment variables
@@ -242,6 +244,12 @@ DEPLOY_NETWORK=nile PURSERPAY_ADDRESS=… USDT_ADDRESS=… TREASURY_WALLET=… V
 
 Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before/at the switch:
 
+> **⚠ S-1 SUPERSEDES step 2 — a fresh deploy of the guarded bytecode is REQUIRED (S-4).** The
+> contract at `TLdySJX…` (step 2) is the **pre-guard** build. S-1 added the on-chain frozen-address
+> guard, which **changes the bytecode**, so mainnet must be **redeployed** with the new artifact in
+> **S-4** and `MAINNET.purserPay` re-pointed; the current address is superseded once that runs.
+> Step 4's energy numbers must be **re-measured against the new (guarded) contract** before the flip.
+
 1. **Verify the mainnet USDT address — DONE.** Real USDT-TRC20 is `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t`
    (verified against Tronscan: Tether USD, USDT, 6 dp, AND read back on-chain as the contract's
    `usdt()`). It is the `MAINNET.usdt` block value and the deploy `USDT_ADDRESS`; it **must** equal
@@ -295,6 +303,15 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
    (under the 15,000 TRX max). **fresh/existing ≈ 1.72×** (fresh N=3 = 473,747 energy vs existing
    holders = 275,747) — fresh is the worst case AND the real case, so we size against it.
 
+   > **⚠ STALE after S-1 — RE-MEASURE the guarded contract in S-4.** The 2026-07-14 numbers were
+   > measured against the **pre-guard** contract at `TLdySJX…`. The S-1 frozen-address guard adds,
+   > per row, one `getBlackListStatus` STATICCALL + one `isBlackListed` SLOAD on USDT (plus one once
+   > for the payer) — small next to the ~157,000 energy a fresh recipient already costs, but **not
+   > zero**, and it is **not yet deployed**. Do **not** guess a new number: after S-4 deploys the
+   > guarded bytecode, re-run `scripts/tron/measure-mainnet.cjs` against the NEW address and
+   > recalibrate `ENERGY_PER_RECIPIENT_FRESH` / `feeLimitForBatch()` from the real constant-call
+   > reading. This recalibration is an **OPEN GAP to close at deploy** (`config.ts` unchanged until then).
+
    > **⚠ NILE'S USDT WAS NOT REPRESENTATIVE OF MAINNET TETHER — a 3.9× MISS.** The Nile mock/rehearsal
    > read ~36,925 energy/recipient; mainnet reads **157,000**. The old Nile constant (40,000) left the
    > feeLimit under-provisioned — a real payroll to **4+ fresh (virgin) wallets** would have died
@@ -339,7 +356,7 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
 
 ```bash
 npm run typecheck && npm run build     # app compiles, all routes generate
-cd contracts && forge test -vv         # 30 pass (29 unit + 1 invariant)
+cd contracts && forge test -vv         # 36 pass (35 unit + 1 invariant)
 DEPLOY_NETWORK=nile PURSERPAY_ADDRESS=… USDT_ADDRESS=… TREASURY_WALLET=… VERIFY_WALLET=… \
   node scripts/tron/verify-e2e.cjs     # live contract reads as expected
 ```

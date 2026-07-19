@@ -142,6 +142,10 @@ export const DISPERSE_ABI: AbiFragment[] = [
   { type: "error", name: "ZeroAddressConfig", inputs: [] },
   { type: "error", name: "InvalidPlan", inputs: [{ name: "planType", type: "uint8" }] },
   { type: "error", name: "NotOwner", inputs: [] },
+  // --- S-1 frozen-address guard (built + tested; NOT deployed until S-4) ---
+  { type: "error", name: "UnsupportedToken", inputs: [{ name: "token", type: "address" }] },
+  { type: "error", name: "DestinationBlacklisted", inputs: [{ name: "dest", type: "address" }] },
+  { type: "error", name: "SenderBlacklisted", inputs: [{ name: "sender", type: "address" }] },
 ]
 
 /** Preferred alias for the full contract ABI. Points at the same array as
@@ -186,6 +190,11 @@ export const ERROR_SELECTORS: Record<string, ErrorSpec> = {
   "0xcd3f1659": { name: "TransferFailed", indexHint: false },
   "0x0948465e": { name: "ZeroAddressConfig", indexHint: false },
   "0xcc0a45bc": { name: "InvalidPlan", indexHint: false },
+  // S-1 frozen-address guard (keccak-derived from PurserPay.sol; NOT deployed until S-4).
+  // The arg is the offending token/wallet address, not a recipient row index → indexHint false.
+  "0xbf16aab6": { name: "UnsupportedToken", indexHint: false },
+  "0xf88cff82": { name: "DestinationBlacklisted", indexHint: false },
+  "0x578f3e13": { name: "SenderBlacklisted", indexHint: false },
   // OpenZeppelin ERC20 (surfaced through a failed transferFrom on the Nile mock)
   "0xfb8f41b2": { name: "ERC20InsufficientAllowance", indexHint: false },
   "0xe450d38c": { name: "ERC20InsufficientBalance", indexHint: false },

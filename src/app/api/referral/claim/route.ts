@@ -1,6 +1,7 @@
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 
+import { recordAffiliateBounty } from "@/lib/affiliate/accounts"
 import {
   claimReferralReward,
   ensureReferralAccount,
@@ -122,6 +123,25 @@ export async function POST(request: Request) {
       granted: result.granted,
       reason: result.reason,
     })
+
+    // C5 — grant-only affiliate bounty ledger (docs/09). If the pp_ref referrer is an
+    // AFFILIATE (a portal payee, not an agency), record an auditable ledger row for the
+    // MANUAL 50-USDT/mo × 6 bounty. The RPC no-ops for non-affiliate codes, self-refs,
+    // and repeats, so this NEVER double-pays an agency→agency free-month referral and
+    // NEVER breaks a claim. Best-effort: swallow + log; it can only ever GRANT.
+    try {
+      const bountyRecorded = await recordAffiliateBounty(referrerCode, refereeHash)
+      if (bountyRecorded) {
+        logClaim("AFFILIATE_BOUNTY_RECORDED", { txid, referee: refereeAddress, referrerCode })
+      }
+    } catch (bountyErr) {
+      logClaim("AFFILIATE_BOUNTY_ERROR", {
+        txid,
+        referee: refereeAddress,
+        detail: bountyErr instanceof Error ? bountyErr.message : String(bountyErr),
+      })
+    }
+
     return NextResponse.json(result, { status: 200 })
   } catch (e) {
     // A referral error must never surface to the already-paid user.

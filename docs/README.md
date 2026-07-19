@@ -46,6 +46,7 @@ subscription, and store the account holder's own PII encrypted — **never** the
 | 06 | [Deployment & ops](./06-deployment.md) | the deploy flow, current addresses, and the **mainnet migration checklist** |
 | 07 | [Free-tier gate](./07-freemium-gate.md) | the 1-payee/30-day free tier: the payer-wallet anchor, the atomic-consume/TOCTOU design, the refund path, the TTL, and the accepted bypass |
 | 08 | [Referrals & credit](./08-referrals-and-credit.md) | the asymmetric referral loop: off-chain credit entitlement (no indexer), the **1:1 anti-fraud ratio**, the monotonic-grant + Active-Lock invariants, and "credit never earns rewards" |
+| 09 | [Affiliate portal](./09-affiliate-portal.md) | the payee-facing `/portal`: signature-gated (reuses the payout challenge), the **disperse-anchored, dissociated, forward-only receipt index**, the grant-only manual-bounty ledger, (§5, 1B) the per-receipt **PDF proof of funds** + **verifiable Audit ID** + public **`/verify`**, and (§6, 1C) the shareable **Flex Card** image with a mandatory privacy toggle |
 
 Governance/spec and product philosophy (the 3 Laws of UX, the public-brand rules, "not in
 V1") live in the repo-root [`CLAUDE.md`](../CLAUDE.md). The Vite-era build log is
@@ -56,11 +57,19 @@ V1") live in the repo-root [`CLAUDE.md`](../CLAUDE.md). The Vite-era build log i
 
 - **The money path / signing** → [`02`](./02-non-custodial.md) + `src/lib/tron/disperse.ts`
 - **Why a payout is or isn't allowed** → [`03`](./03-data-flow.md) §4 (`usePayout.ts` →
-  `runPayment`)
+  `preflightThenPay` → `executePayout`)
 - **OFAC / PII / secrets** → [`04`](./04-compliance-and-encryption.md) +
   `src/app/actions/compliance.ts`
 - **Changing the contract** → [`05`](./05-smart-contract.md) + `contracts/`
 - **Switching networks / deploying** → [`06`](./06-deployment.md) + `src/lib/tron/config.ts`
+- **The payee receipt portal / who-got-paid records** → [`09`](./09-affiliate-portal.md) +
+  `src/app/portal/` + `src/lib/affiliate/` + `src/lib/tron/serverRead.ts` (`verifyDisperseTx`)
+- **The receipt PDF / Audit ID / on-chain verification** → [`09` §5](./09-affiliate-portal.md) +
+  `src/app/api/affiliate/receipt/` + `src/app/verify/[txid]/` + `src/lib/affiliate/`
+  (`receiptPdf`, `auditId`, `verify`) + `supabase/migrations/0006_receipt_audit.sql`
+- **The shareable Flex Card image / privacy toggle** → [`09` §6](./09-affiliate-portal.md) +
+  `src/app/api/affiliate/flex/` + `src/lib/affiliate/` (`flexModel`, `flexCard`, `flexClient`) +
+  the vendored font in `src/lib/affiliate/fonts/`
 
 ## Invariants cheat-sheet (the non-negotiables)
 
@@ -69,8 +78,13 @@ Break any of these and the change is wrong by definition. Sources in the linked 
 - **Non-custodial, always.** Purser never holds funds/keys and never broadcasts. All
   signing goes through the user's injected wallet (`src/lib/tron/client.ts`). The contract
   holds nothing (balance ≡ 0). → [`02`](./02-non-custodial.md), [`05`](./05-smart-contract.md)
-- **The roster never leaves the device** in readable form. It lives in IndexedDB (Dexie)
-  only; no server call carries it. → [`03`](./03-data-flow.md)
+- **The roster never leaves the device** in readable form. The roster — the names + wallets
+  the agency *types in* — lives in IndexedDB (Dexie) only; no server call carries it. →
+  [`03`](./03-data-flow.md). **Distinct from** the affiliate **receipt index**
+  (`disperse_receipts`, [`09`](./09-affiliate-portal.md)): a *dissociated, hashed, forward-only*
+  record of `hash(recipient) + amount + payer + txid`, derived entirely from **public on-chain
+  disperse calldata** — no names, no cleartext recipient wallets. The roster stays device-local;
+  the index is not the roster.
 - **Store nothing we can read.** Account PII is pgcrypto AES-256 encrypted; wallet
   addresses are salted-SHA-256 hashed; screening fails **closed**. → [`04`](./04-compliance-and-encryption.md)
 - **The ✓✓ read sends only the operator's own address**; payee addresses are matched
@@ -103,6 +117,14 @@ Break any of these and the change is wrong by definition. Sources in the linked 
   can only GRANT access, never DENY it; a month activated from credit never earns a reward
   (a reward needs a verified on-chain `subscribe` tx). The contract is untouched — the
   chain stays the source of truth for payments. → [`08`](./08-referrals-and-credit.md)
+  **Sprint 2:** the **agency→agency invite UI is RETIRED** — a paying agency inviting a
+  competitor is dead by **structural conflict of interest** (NOT "the incentive was too small";
+  don't rebuild it by raising the reward). The credit **infrastructure is FROZEN, not dropped**
+  (schema kept, existing credit still honored monotonically, `REFERRALS_ENABLED` unchanged). The
+  **affiliate→agency** referral (a payee referring agencies, [`09`](./09-affiliate-portal.md)) is a
+  **different, LIVE** vector on the same `/r/{code}` + `referral_accounts` plumbing; other
+  agency-side vectors (non-competing partner / supplier / other geography) are **postponed, not
+  killed**. → [`08` Status](./08-referrals-and-credit.md)
 
 ## Discarded — do not reopen
 

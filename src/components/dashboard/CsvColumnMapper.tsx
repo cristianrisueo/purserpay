@@ -173,11 +173,32 @@ export function CsvColumnMapper({
           </ul>
         </div>
       ) : mappingResult?.ok ? (
-        <p className="rounded-[10px] border border-border bg-muted/30 px-3 py-2.5 text-[13px] font-medium text-foreground">
-          Ready to import {mappingResult.rows.length} payee
-          {mappingResult.rows.length === 1 ? "" : "s"}
-          {isDestructive ? `, replacing your current ${rosterCount}.` : "."}
-        </p>
+        <div className="flex flex-col gap-2">
+          {mappingResult.conflicts.length > 0 && (
+            <div className="rounded-[10px] border border-border bg-muted/50 px-3 py-2.5 text-[13px]">
+              <p className="font-medium text-foreground">
+                Some rows share an address and weren&apos;t imported:
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
+                {mappingResult.conflicts.map((msg) => (
+                  <li key={msg}>{msg}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {mappingResult.rows.length > 0 ? (
+            <p className="rounded-[10px] border border-border bg-muted/30 px-3 py-2.5 text-[13px] font-medium text-foreground">
+              Ready to import {mappingResult.rows.length} payee
+              {mappingResult.rows.length === 1 ? "" : "s"}
+              {isDestructive ? `, replacing your current ${rosterCount}.` : "."}
+            </p>
+          ) : (
+            <p className="rounded-[10px] border border-border bg-muted/50 px-3 py-2.5 text-[13px] text-muted-foreground">
+              Every row shares an address with another. Fix the duplicates and
+              import again.
+            </p>
+          )}
+        </div>
       ) : null}
     </div>
   )

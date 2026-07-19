@@ -7,6 +7,32 @@
 
 ---
 
+## Status (Sprint 2) — the agency→agency INVITE UI is RETIRED; the credit infra is FROZEN
+
+> The **agency→agency** cold referral — a paying 150-USDT/mo agency inviting **another agency**
+> for a free credit month — is **dead by STRUCTURAL CONFLICT OF INTEREST**: a CPA/OFM agency does
+> not hand its direct competitor the tool. **Record the reason as the conflict of interest, NOT
+> "the incentive was too small"** — otherwise someone later "fixes" it by raising the reward and
+> rebuilds a channel that was structurally dead from the start.
+>
+> What changed: the **dashboard invite card** (`src/components/dashboard/ReferralCard.tsx`) was
+> **removed** — the only surface that promoted the agency→agency invite. **Nothing else changed.**
+> The credit **infrastructure is FROZEN, not dropped**: the `referral_accounts` / `referral_rewards`
+> schema, the credit columns, and the entire claim path (§7) all stay; existing credit is still
+> **honored monotonically** (§4); `REFERRALS_ENABLED` is unchanged (still default OFF). The claim
+> path is deliberately kept **live** because the **affiliate→agency** bounty
+> ([`09`](./09-affiliate-portal.md)) rides on it — see below.
+>
+> **This did NOT kill referrals as a channel.** The **affiliate→agency** vector (a *payee* — a
+> model/contractor — referring the agencies they work with, [`09`](./09-affiliate-portal.md)) is a
+> **different, LIVE** vector: a payee is not a competing agency, so no conflict of interest. It
+> reuses the **same** `/r/{code}` + `referral_accounts` plumbing (an affiliate is a
+> `referral_accounts` row with `is_affiliate = true`) and is **unaffected** by removing the agency
+> card. Other agency-side vectors — agency → a **non-competing** partner / supplier / a colleague in
+> another geography — are **POSTPONED, not killed**, pending real trench data.
+
+---
+
 ## 1. What it is
 
 An **asymmetric referral loop**. A paying customer shares an opaque link
@@ -220,8 +246,14 @@ first_paid_at) and `referral_rewards` (txid PK, referrer/referee hashes, referee
 
 `src/lib/referral/config.ts` → `referralsEnabled()`, server-only, **default OFF**. Off:
 `/r/{code}` still sets the cookie (attribution), the gate still **honors existing credit**
-(monotonic), but no new reward is granted and the dashboard card is hidden. On: the full
-loop runs.
+(monotonic), but no new agency reward is granted. On: the credit-reward mechanic runs.
+
+> **Sprint 2:** the agency dashboard invite card was **removed**, so there is no longer a UI
+> that *promotes* the agency→agency invite — flipping `REFERRALS_ENABLED` on no longer surfaces a
+> "share your link" card to agencies. The switch still governs whether the **claim path** grants an
+> agency credit month, and still leaves attribution + monotonic honoring of existing credit
+> untouched. The **affiliate** bounty write ([`09`](./09-affiliate-portal.md)) is a separate path
+> and is not governed by this switch.
 
 ## 11. Files
 
@@ -235,6 +267,7 @@ loop runs.
 | On-chain subscribe-tx verifier | `src/lib/tron/serverRead.ts` → `verifySubscribeTx` |
 | Gate credit dep | `src/lib/freeTier/gate.ts` (`checkCredit`) + `src/app/api/payout/authorize/route.ts` |
 | Attribution / claim / summary routes | `src/app/r/[code]/route.ts`, `src/app/api/referral/{claim,summary}/route.ts` |
-| Invited banner / dashboard card | `src/components/landing/InvitedBanner.tsx`, `src/components/dashboard/ReferralCard.tsx` |
+| Invited banner (landing receiving-end of any `/r/{code}`) | `src/components/landing/InvitedBanner.tsx` |
+| ~~Agency dashboard invite card~~ | **REMOVED in Sprint 2** (`src/components/dashboard/ReferralCard.tsx` deleted — agency→agency dead by conflict of interest). Running/banked credit is still shown by `src/components/dashboard/DashboardHeader.tsx`. |
 | Client wiring | `src/hooks/usePayout.ts`, `src/components/landing/PricingSection.tsx` |
 | Tests | `tests/referral/entitlement.test.ts`, `tests/referral/claim.integration.test.ts`, `tests/referral/credit.toctou.integration.test.ts` |
