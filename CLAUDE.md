@@ -120,8 +120,11 @@ never the roster).
   shared `lib/tron/wallet.ts` + `subscription.ts`, shows a neutral resolving state so a
   connected user never flashes "Connect Wallet", and routes into the dashboard: an
   unsubscribed-but-connected wallet ("Go to Dashboard") lands in **free mode**, a subscribed
-  one goes straight in. **How it works** runs Modules 01–03 on one symmetric 50/50 rhythm (copy
-  left, cards/receipt-preview right) with a 16:9 walkthrough slot as 04. The **Pricing**
+  one goes straight in. **How it works** runs Modules 01/02 on one symmetric 50/50 rhythm (copy
+  left, cards right) with a 16:9 walkthrough slot as 04; **Module 03 ("The same proof, on both
+  sides") breaks that rhythm** — its copy spans the full width on top, with **two side-by-side
+  proof cards below** (the agency dashboard "What you see" + the payee portal "What your payees
+  see", both faithful static replicas of the live app — `ProofBothSides.tsx`). The **Pricing**
   section's own **Subscribe** button is the exception: it subscribes **inline** — connect
   the wallet if needed, then `runSubscribe` from the user's own wallet (fail-closed with a
   calm "not deployed yet" until the contract ships). The on-chain `subscribe(uint8 planType)`

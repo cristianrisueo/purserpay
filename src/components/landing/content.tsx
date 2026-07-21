@@ -27,13 +27,38 @@ export const demoTotal = "1,300"
 // UNCHECKED (as an operator would leave a blocked row) so "Pay all" is legitimately active over
 // the three clean rows — mirroring the live app, where blockedCount/selectedSum/the pre-flight
 // summary are all computed over SELECTED rows (usePayout.ts). demoTotal is that selected sum
-// (1,300); the unchecked frozen 100 is not counted. Names only — no role (ROLE-1). ReceiptPreview
-// (Module 03) reads the first three of these for its finalized-receipt visual (name/wallet/amount).
+// (1,300); the unchecked frozen 100 is not counted. Names only — no role (ROLE-1). Consumed only
+// by HeroPayoutCard now (Module 03's visual has its own two-sided mock data, below).
 export const demoRecipients: Recipient[] = [
   { name: "Marcus Bell", wallet: "TXRq2A…tVPBi", amount: "400", line: "paid-before" },
   { name: "Devin Cole", wallet: "TKtoPD…7LJMY", amount: "600", line: "valid" },
   { name: "Rachel Nguyen", wallet: "TNXoiA…Xc32G", amount: "300", line: "valid", exchange: true },
   { name: "Aaron Wells", wallet: "TGwoyc…pDZRg", amount: "100", line: "frozen" },
+]
+
+// --- Module 03 mock data (#how — "The same proof, on both sides") -----------
+// Two decorative mocks (never real wallets): the SAME confirmed payout seen from the agency
+// (dashboard post-pay) and from a payee (/portal receipts). ProofBothSides.tsx renders these;
+// the structural, app-mirroring strings (labels/headers/footers) stay inline in that component,
+// same split as HeroPayoutCard. Amounts stay in hundreds/thousands (never sandbox-scale).
+
+// Agency side — one July batch, every row paid. Names/addresses reuse the hero rows for
+// cross-page coherence (here all in the paid state, since this is the post-payout view).
+export type ProofAgencyRow = { name: string; wallet: string; amount: string }
+export const proofAgencyRows: ProofAgencyRow[] = [
+  { name: "Marcus Bell", wallet: "TXRq2A…tVPBi", amount: "400" },
+  { name: "Devin Cole", wallet: "TKtoPD…7LJMY", amount: "600" },
+  { name: "Rachel Nguyen", wallet: "TNXoiA…Xc32G", amount: "300" },
+]
+
+// Payee side — ONE payee's own history across months, from a distinct agency payer wallet (not
+// one of the recipient rows above, so it never reads as a payee paying itself). Coherent
+// hundreds/thousands; staggered monthly dates read as a real payment record, not test data.
+export type ProofPayeeReceipt = { amount: string; from: string; date: string }
+export const proofPayeeReceipts: ProofPayeeReceipt[] = [
+  { amount: "400", from: "TWpb9C…4mK7Z", date: "21 Jul 2026" },
+  { amount: "600", from: "TWpb9C…4mK7Z", date: "21 Jun 2026" },
+  { amount: "1,200", from: "TWpb9C…4mK7Z", date: "21 May 2026" },
 ]
 
 // --- Hero benefits checklist (#why, left column) ----------------------------
@@ -131,8 +156,8 @@ export const modules: Module[] = [
   {
     n: "03",
     eyebrow: "proof, on file",
-    title: "A receipt for every run",
-    body: "The moment a batch confirms on-chain, Purser writes an immutable receipt — timestamped, each recipient and destination hash recorded, every line linked straight to Tronscan. Clean books, clear proof of payment, no disputes.",
+    title: "The same proof, on both sides.",
+    body: "The moment a batch confirms on-chain, PurserPay writes an immutable receipt — timestamped, each recipient linked to its Tronscan hash. You get a clean report for your books. Your payees open one anonymous link to view, download, and on-chain-verify every payment you sent them. Same on-chain truth, two views — no “did you pay me?”, no disputes.",
   },
   {
     n: "04",

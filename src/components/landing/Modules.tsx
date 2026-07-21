@@ -1,14 +1,15 @@
 import { Section } from "./Section"
 import { Eyebrow } from "./Eyebrow"
-import { ReceiptPreview } from "./ReceiptPreview"
+import { ProofBothSides } from "./ProofBothSides"
 import { VideoWalkthrough } from "./VideoWalkthrough"
 import { modules, type Module } from "./content"
 
 // Bloques 1–4 — the workflow (#how). A single vertical stack of full-width rows,
-// framed by clean 1px hairlines (gap-px over the border colour). All four modules
-// share one symmetric 50/50 rhythm on desktop — copy on the left, the visual on
-// the right: the pair of check cards for 01–02, the static receipt preview for 03,
-// and a compact 16:9 walkthrough thumbnail for 04 that opens a lightbox video.
+// framed by clean 1px hairlines (gap-px over the border colour). Modules 01/02 and 04
+// keep a symmetric 50/50 rhythm on desktop — copy on the left, the visual on the right
+// (the pair of check cards for 01–02, a 16:9 walkthrough thumbnail for 04). Module 03
+// breaks that rhythm (owner decision): its copy spans the full width on top, with the
+// two proof cards — the agency view and the payee view — side by side below.
 export function Modules() {
   return (
     <Section id="how" band>
@@ -59,11 +60,23 @@ function ModuleCell({ module: m }: { module: Module }) {
   const kind = moduleKind(m)
   const cell = "bg-card p-[clamp(24px,3.2vw,36px)]"
 
-  // One symmetric 50/50 shell for all four modules: copy left, visual right
-  // (desktop). The right column is the pair of check cards (points), the static
-  // receipt (preview), or the walkthrough thumbnail that opens a lightbox (video).
-  // Points carry an optional marker: ✓ (single), ✓✓ (paid-before), or none for a
-  // descriptive property that isn't a verification status.
+  // Module 03 (preview) breaks the 50/50 rhythm by owner decision: the copy spans the
+  // full width on top, and the two proof cards (agency + payee) sit side by side below
+  // (stacking on narrow screens — handled inside ProofBothSides).
+  if (kind === "preview") {
+    return (
+      <div className={cell}>
+        <ModuleHead module={m} />
+        <div className="mt-[clamp(28px,4vw,44px)]">
+          <ProofBothSides />
+        </div>
+      </div>
+    )
+  }
+
+  // Modules 01/02 (points) and 04 (video): the symmetric 50/50 shell — copy left, visual
+  // right on desktop. Points carry an optional marker: ✓ (single), ✓✓ (paid-before), or
+  // none for a descriptive property that isn't a verification status.
   return (
     <div className={cell}>
       <div className="grid grid-cols-1 items-center gap-[clamp(28px,4vw,56px)] md:grid-cols-2">
@@ -73,8 +86,6 @@ function ModuleCell({ module: m }: { module: Module }) {
 
         {kind === "video" ? (
           <VideoWalkthrough label="Play" />
-        ) : kind === "preview" ? (
-          <ReceiptPreview />
         ) : (
           m.points && (
             <div className="grid grid-cols-1 gap-4">
