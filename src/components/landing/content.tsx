@@ -114,28 +114,18 @@ export type Module = {
   title: string
   body: string
   points?: ModulePoint[]
-  /** "video" renders a structural 16:9 walkthrough slot instead of points. */
-  variant?: "video"
+  /** "video" renders a structural 16:9 walkthrough slot; "defenses" renders the four
+   *  on-chain-defense cards (Module 01) — both replace the points list. */
+  variant?: "video" | "defenses"
 }
 
 export const modules: Module[] = [
   {
     n: "01",
-    eyebrow: "double-check",
-    title: "The double-validation engine",
-    body: "Every address is checked twice before a single USDT moves, so a mistyped character never becomes money you can't get back.",
-    points: [
-      {
-        label: "Check 1 — Live on TRON",
-        body: "Confirms the address is well-formed and actually exists on the TRON ledger, the moment you enter it.",
-        check: "single",
-      },
-      {
-        label: "Check 2 — Paid before",
-        body: "Cross-references your own outgoing history and flags whether you've successfully paid that address in the last 90 days.",
-        check: "double",
-      },
-    ],
+    eyebrow: "built to be safe",
+    title: "Security and simplicity.",
+    body: "Four on-chain defenses stand between a mistake and your money — an address that doesn't exist, a wallet Tether has frozen, a half-finished batch. You never see the machinery. You see one button; the contract does the rest.",
+    variant: "defenses",
   },
   {
     n: "02",
@@ -165,6 +155,43 @@ export const modules: Module[] = [
     title: "The walkthrough",
     body: "A short, unedited run through the whole thing — the happy path end to end, plus what an error actually looks like and how the checks catch it before anything is signed.",
     variant: "video",
+  },
+]
+
+// --- Module 01's four on-chain defenses (#how, 2×2 grid) --------------------
+// DefenseCards.tsx renders these in a 2×2 grid: the two address checks (live, paid-before —
+// the aqua ✓/✓✓ idiom) on the left, the two contract-level guards (frozen-guard, atomic) on
+// the right. Fidelity (owner-enforced): every claim maps to a shipped defense — the ✓/✓✓
+// double-check (validation.ts), the S-1 on-chain frozen-destination revert (DestinationBlacklisted,
+// live+verified on nile; mainnet redeploy pending S-4), and the atomic all-or-none disperse.
+// Order here is DOM order (A,B,C,D); the grid places C — the strongest, the only unfalsifiable
+// on-chain require — top-right as the first visual focus. GREEN is NOT used here (paid-only rule).
+export type DefenseCard = {
+  id: "live" | "paid-before" | "frozen-guard" | "atomic"
+  title: string
+  body: string
+}
+
+export const defenseCards: DefenseCard[] = [
+  {
+    id: "live",
+    title: "Live on TRON",
+    body: "Confirms the address is well-formed and actually exists on the TRON ledger, the moment you enter it.",
+  },
+  {
+    id: "paid-before",
+    title: "Paid before",
+    body: "Cross-references your own outgoing history and flags whether you've successfully paid that address in the last 90 days.",
+  },
+  {
+    id: "frozen-guard",
+    title: "Frozen-wallet guard",
+    body: "Before every payment, the contract checks on-chain whether Tether has frozen the destination. If it has, the transaction reverts and nothing moves. Funds sent to a frozen wallet are effectively lost — recovery runs around 3.6%. This isn't a warning; it's an on-chain require the money cannot cross.",
+  },
+  {
+    id: "atomic",
+    title: "All-or-nothing",
+    body: "A batch either settles in full or not at all. One bad row reverts the entire transaction — you never end up with half a payroll paid and the rest in limbo. A problem address means zero damage, not an irreparable partial send.",
   },
 ]
 

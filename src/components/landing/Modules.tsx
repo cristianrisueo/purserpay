@@ -1,15 +1,16 @@
 import { Section } from "./Section"
 import { Eyebrow } from "./Eyebrow"
+import { DefenseCards } from "./DefenseCards"
 import { ProofBothSides } from "./ProofBothSides"
 import { VideoWalkthrough } from "./VideoWalkthrough"
 import { modules, type Module } from "./content"
 
-// Bloques 1–4 — the workflow (#how). A single vertical stack of full-width rows,
-// framed by clean 1px hairlines (gap-px over the border colour). Modules 01/02 and 04
-// keep a symmetric 50/50 rhythm on desktop — copy on the left, the visual on the right
-// (the pair of check cards for 01–02, a 16:9 walkthrough thumbnail for 04). Module 03
-// breaks that rhythm (owner decision): its copy spans the full width on top, with the
-// two proof cards — the agency view and the payee view — side by side below.
+// Bloques 1–4 — the workflow (#how). A single vertical stack of full-width rows, framed by
+// clean 1px hairlines (gap-px over the border colour). Module 02 keeps the symmetric 50/50
+// rhythm (copy left, the pair of check cards right), and 04 is a 16:9 walkthrough thumbnail on
+// the right. Modules 01 and 03 break that rhythm (owner decision): the copy spans the full
+// width on top, with the visual below — a 2×2 grid of the four on-chain defenses for 01, and
+// the two side-by-side proof cards (agency + payee) for 03.
 export function Modules() {
   return (
     <Section id="how" band>
@@ -29,8 +30,9 @@ export function Modules() {
   )
 }
 
-function moduleKind(m: Module): "points" | "video" | "preview" {
+function moduleKind(m: Module): "points" | "video" | "preview" | "defenses" {
   if (m.variant === "video") return "video"
+  if (m.variant === "defenses") return "defenses"
   if (m.points) return "points"
   return "preview"
 }
@@ -60,23 +62,23 @@ function ModuleCell({ module: m }: { module: Module }) {
   const kind = moduleKind(m)
   const cell = "bg-card p-[clamp(24px,3.2vw,36px)]"
 
-  // Module 03 (preview) breaks the 50/50 rhythm by owner decision: the copy spans the
-  // full width on top, and the two proof cards (agency + payee) sit side by side below
-  // (stacking on narrow screens — handled inside ProofBothSides).
-  if (kind === "preview") {
+  // Modules 01 (defenses) and 03 (preview) break the 50/50 rhythm by owner decision: the copy
+  // spans the full width on top, and the visual sits below — the 2×2 four-defense grid for 01,
+  // the two side-by-side proof cards for 03 (each component owns its own responsive stacking).
+  if (kind === "defenses" || kind === "preview") {
     return (
       <div className={cell}>
         <ModuleHead module={m} />
         <div className="mt-[clamp(28px,4vw,44px)]">
-          <ProofBothSides />
+          {kind === "defenses" ? <DefenseCards /> : <ProofBothSides />}
         </div>
       </div>
     )
   }
 
-  // Modules 01/02 (points) and 04 (video): the symmetric 50/50 shell — copy left, visual
-  // right on desktop. Points carry an optional marker: ✓ (single), ✓✓ (paid-before), or
-  // none for a descriptive property that isn't a verification status.
+  // Module 02 (points) and 04 (video): the symmetric 50/50 shell — copy left, visual right
+  // on desktop. Points carry an optional marker: ✓ (single), ✓✓ (paid-before), or none for
+  // a descriptive property that isn't a verification status.
   return (
     <div className={cell}>
       <div className="grid grid-cols-1 items-center gap-[clamp(28px,4vw,56px)] md:grid-cols-2">
