@@ -44,6 +44,12 @@ export function SiteFooter() {
               contact
             </span>
             <a
+              href="mailto:cristian@sailorlabs.xyz"
+              className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
+            >
+              cristian@sailorlabs.xyz
+            </a>
+            <a
               href="mailto:dorian@sailorlabs.xyz"
               className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
             >
@@ -54,7 +60,7 @@ export function SiteFooter() {
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
           <span className="font-mono text-[11px] text-[#93908A]">
-            © 2026 PurserPay · Built with passion by <a href="https://sailorlabs.xyz" className="text-primary hover:underline">SailorLabs</a> 🌊
+            © 2026 PurserPay · Crafted with passion by <a href="https://sailorlabs.xyz" className="text-primary hover:underline">SailorLabs</a> 🌊
           </span>
           <span className="font-mono text-[11px] text-[#93908A]">
             TRON · USDT (TRC20)

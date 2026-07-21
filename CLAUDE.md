@@ -120,17 +120,19 @@ never the roster).
   shared `lib/tron/wallet.ts` + `subscription.ts`, shows a neutral resolving state so a
   connected user never flashes "Connect Wallet", and routes into the dashboard: an
   unsubscribed-but-connected wallet ("Go to Dashboard") lands in **free mode**, a subscribed
-  one goes straight in. **How it works**: **Module 02** keeps the symmetric 50/50 rhythm (copy
-  left, its two check cards right) and **04** is a 16:9 walkthrough slot; **Modules 01 and 03
-  break that rhythm** — copy full-width on top, the visual below. **Module 01 ("Security and
-  simplicity")** shows a **2×2 grid of the four on-chain defenses** (`DefenseCards.tsx`): the two
-  address checks — ✓ **Live on TRON** + ✓✓ **Paid before** — on the left, the two contract-level
-  guards — **Frozen-wallet guard** (the S-1 `DestinationBlacklisted` revert) + **All-or-nothing**
-  (atomic disperse) — on the right, with the frozen-guard as the **focal** card (top-right, subtle
-  **aqua** accent — the only unfalsifiable, on-chain-`require` defense). **Module 03 ("The same
-  proof, on both sides")** shows **two side-by-side proof cards** (`ProofBothSides.tsx`): the agency
-  dashboard "What you see" + the payee portal "What your payees see", both faithful static replicas
-  of the live app. The **Pricing**
+  one goes straight in. **How it works**: **Module 02 alone** keeps the symmetric 50/50 rhythm
+  (copy left, its two check cards right); **Modules 01, 03 and 04 break that rhythm** — copy
+  full-width on top, the visual full-width below. **Module 01 ("Security and simplicity")** shows
+  a **2×2 grid of the four on-chain defenses** (`DefenseCards.tsx`): the two address checks —
+  ✓ **Live on TRON** + ✓✓ **Paid before** — on the left, the two contract-level guards —
+  **Frozen-wallet guard** (the S-1 `DestinationBlacklisted` revert) + **All-or-nothing** (atomic
+  disperse) — on the right, with the frozen-guard as the **focal** card (top-right, subtle **aqua**
+  accent — the only unfalsifiable, on-chain-`require` defense). **Module 03 ("The same proof, on
+  both sides")** shows **two side-by-side proof cards** (`ProofBothSides.tsx`): the agency dashboard
+  "What you see" + the payee portal "What your payees see", both faithful static replicas of the
+  live app. **Module 04 ("The walkthrough")** now runs the same full-width treatment — copy on top,
+  the **16:9 walkthrough surface full-width below** (`VideoWalkthrough.tsx`, opens a lightbox video).
+  The **Pricing**
   section's own **Subscribe** button is the exception: it subscribes **inline** — connect
   the wallet if needed, then `runSubscribe` from the user's own wallet (fail-closed with a
   calm "not deployed yet" until the contract ships). The on-chain `subscribe(uint8 planType)`

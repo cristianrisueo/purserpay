@@ -49,7 +49,7 @@ export function VideoWalkthrough({ label }: { label: string }) {
           src="/screen_two.png"
           alt="Walkthrough preview"
           fill
-          sizes="(min-width: 768px) 50vw, 100vw"
+          sizes="(min-width: 768px) min(1088px, calc(100vw - 4rem)), 100vw"
           className="object-cover"
         />
         {/* Soft scrim so the play affordance stays legible over the screenshot. */}
