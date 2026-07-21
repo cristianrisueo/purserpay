@@ -120,18 +120,26 @@ never the roster).
   shared `lib/tron/wallet.ts` + `subscription.ts`, shows a neutral resolving state so a
   connected user never flashes "Connect Wallet", and routes into the dashboard: an
   unsubscribed-but-connected wallet ("Go to Dashboard") lands in **free mode**, a subscribed
-  one goes straight in. **How it works**: **Module 02 alone** keeps the symmetric 50/50 rhythm
-  (copy left, its two check cards right); **Modules 01, 03 and 04 break that rhythm** — copy
-  full-width on top, the visual full-width below. **Module 01 ("Security and simplicity")** shows
+  one goes straight in. **How it works**: **all four modules** use the same full-width rhythm —
+  copy full-width on top, the visual full-width below (the old 50/50 copy-left/cards-right shell is
+  **retired**; Module 02 was its last user). **Module 01 ("Security and simplicity")** shows
   a **2×2 grid of the four on-chain defenses** (`DefenseCards.tsx`): the two address checks —
   ✓ **Live on TRON** + ✓✓ **Paid before** — on the left, the two contract-level guards —
   **Frozen-wallet guard** (the S-1 `DestinationBlacklisted` revert) + **All-or-nothing** (atomic
   disperse) — on the right, with the frozen-guard as the **focal** card (top-right, subtle **aqua**
-  accent — the only unfalsifiable, on-chain-`require` defense). **Module 03 ("The same proof, on
-  both sides")** shows **two side-by-side proof cards** (`ProofBothSides.tsx`): the agency dashboard
-  "What you see" + the payee portal "What your payees see", both faithful static replicas of the
-  live app. **Module 04 ("The walkthrough")** now runs the same full-width treatment — copy on top,
-  the **16:9 walkthrough surface full-width below** (`VideoWalkthrough.tsx`, opens a lightbox video).
+  accent — the only unfalsifiable, on-chain-`require` defense). **Module 02 ("Your data isn't our
+  business. Your privacy is.")** shows **two side-by-side privacy panels** (`PrivacyPanels.tsx`),
+  each with a **severed-flow micro-diagram**: "The 99% never leaves your machine" (device-local
+  roster/CSV/history ✕→ our servers · nothing) + "The 1%: encrypted, minimal, never sold" (the
+  minimal billing KYC — **encrypted at rest + dissociated**, keyed by a one-way wallet hash, ✕→
+  never linked to who you pay). Copy is **Variant-C-honest**: it says *encrypted / dissociated /
+  never sold* and **never** "we can't read it" — the server holds the pgcrypto key (`compliance.ts`
+  + `docs/04` + `/privacy` + `/legal`); GREEN is never used in the diagrams (paid-only) and the ✕ is
+  calm muted-ink (a privacy win, not an error). **Module 03 ("The same proof, on both sides")**
+  shows **two side-by-side proof cards** (`ProofBothSides.tsx`): the agency dashboard "What you see"
+  + the payee portal "What your payees see", both faithful static replicas of the live app.
+  **Module 04 ("The walkthrough")** runs the same full-width treatment — copy on top, the **16:9
+  walkthrough surface full-width below** (`VideoWalkthrough.tsx`, opens a lightbox video).
   The **Pricing**
   section's own **Subscribe** button is the exception: it subscribes **inline** — connect
   the wallet if needed, then `runSubscribe` from the user's own wallet (fail-closed with a
@@ -570,11 +578,15 @@ lines still reflect the old model and must be reconciled in a dedicated copy pas
   `PreflightBanner.tsx`); no animation. The **frozen row renders UNCHECKED** — as an operator would
   leave a blocked row — so **"Pay all" stays legitimately active** over the three clean rows; this
   mirrors the app, where `blockedCount` / the selected sum / the pre-flight summary are all computed
-  over **selected** rows (`usePayout.ts`). Because the "Before you pay" strip summarizes the
-  **selected** batch, it shows **only the amber exchange line** (the red frozen line drops); the frozen
-  row keeps its always-on **red inline badge + disabled per-row Pay**. Footer reads "3 selected · 1,300
-  USDT". The decorative **`Recipient.role` was already removed** (ROLE-1's deferred landing half). Green
-  stays paid-only; brand tokens only.
+  over **selected** rows (`usePayout.ts`). The "Before you pay" strip **composites both banner
+  categories by severity** — the red **frozen** line FIRST (blocking: the contract reverts; the `Ban`
+  icon + copy verbatim from `PreflightBanner.tsx`, count dynamic from the roster mock), then the amber
+  **exchange** advisory. (The live banner is selected-only, so an unchecked frozen row would drop the
+  red line; the hero deliberately shows it — a marketing composite of every banner state the app can
+  produce, matching the card's "all row states at once" approach.) The frozen row still keeps its
+  always-on **red inline badge + disabled per-row Pay** and **"Pay all" stays active** — footer reads
+  "3 selected · 1,300 USDT". The decorative **`Recipient.role` was already removed** (ROLE-1's deferred
+  landing half). Green stays paid-only; brand tokens only.
 
 **Still pending (non-landing).** The port is verified 1:1, so this copy pass is now
 **unblocked** — but it is deliberately deferred to its own dedicated pass (this doc-audit

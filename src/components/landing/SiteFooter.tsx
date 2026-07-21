@@ -44,16 +44,16 @@ export function SiteFooter() {
               contact
             </span>
             <a
-              href="mailto:cristian@sailorlabs.xyz"
-              className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
-            >
-              cristian@sailorlabs.xyz
-            </a>
-            <a
               href="mailto:dorian@sailorlabs.xyz"
               className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
             >
               dorian@sailorlabs.xyz
+            </a>
+            <a
+              href="mailto:cristian@sailorlabs.xyz"
+              className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
+            >
+              cristian@sailorlabs.xyz
             </a>
           </div>
         </div>

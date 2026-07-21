@@ -11,21 +11,42 @@ import { demoRecipients, demoTotal, type Recipient } from "./content"
 // animation — a snapshot of the review state, safe to server-render.
 //
 // The frozen row is rendered UNCHECKED (an operator excludes a blocked row) so "Pay all" stays
-// legitimately active over the three clean rows. This is faithful: blockedCount, the selected sum,
-// and the pre-flight banner summary are all computed over SELECTED rows in usePayout.ts — so an
-// unchecked frozen row leaves Pay all enabled AND drops the frozen line from the "Before you pay"
-// strip (which summarizes the selected batch); the frozen row keeps its always-on red inline badge.
+// legitimately active over the three clean rows (blockedCount + the selected sum are computed over
+// SELECTED rows in usePayout.ts). The "Before you pay" strip COMPOSITES every category the live
+// PreflightBanner can produce into one showcase frame — the red frozen line first (severity:
+// blocking > advisory), then the amber exchange advisory — each string verbatim from
+// PreflightBanner.tsx. (The live banner is selected-only, so with the frozen row unchecked it would
+// drop the red line; the hero deliberately shows it — the same "show every state at once" composite
+// that already crams four row states into one card. The frozen row keeps its red inline badge too.)
 export function HeroPayoutCard() {
+  // Dynamic count straight from the roster mock, so the copy pluralizes exactly like the live
+  // PreflightBanner (1 → "it", N → "them"). Today the roster carries a single frozen row (Aaron).
+  const frozenCount = demoRecipients.filter((r) => r.line === "frozen").length
+
   return (
     <div className="overflow-hidden rounded-[14px] border border-border bg-card shadow-[0_1px_2px_rgba(17,16,20,0.04),0_30px_60px_-34px_rgba(17,16,20,0.28)]">
       {/* "Before you pay" strip — copy verbatim from the dashboard PreflightBanner (incl. the app's
-          singular phrasing), so the mockup reads exactly what a real flagged batch shows. The frozen
-          row is unchecked (not in the selected batch), so — like the live selected-only banner — the
-          strip shows only the amber exchange advisory; the frozen row's red badge stays on the row. */}
+          phrasing + pluralization), so the mockup reads exactly what a real flagged batch shows. Both
+          categories show by SEVERITY: the red frozen line first (blocking — the contract reverts), then
+          the amber exchange advisory. The frozen row stays unchecked; the strip composites both banner
+          states the app can produce into one showcase frame (see the header note). */}
       <div className="flex flex-col gap-2 border-b border-[#EFEDE9] px-5 py-4">
         <span className="text-[12.5px] font-semibold text-foreground">
           Before you pay:
         </span>
+        {frozenCount > 0 ? (
+          <p className="flex items-start gap-2 text-[12px] leading-relaxed text-destructive">
+            <Ban className="mt-[1px] size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              <span className="font-semibold">
+                {frozenCount} frozen by Tether
+              </span>{" "}
+              — paying {frozenCount === 1 ? "it" : "them"} would be an irreversible
+              loss: the funds would not reach the recipient and can&apos;t be
+              recovered. Remove {frozenCount === 1 ? "it" : "them"} to continue.
+            </span>
+          </p>
+        ) : null}
         <p className="flex items-start gap-2 text-[12px] leading-relaxed text-warning">
           <Landmark className="mt-[1px] size-3.5 shrink-0" aria-hidden="true" />
           <span>

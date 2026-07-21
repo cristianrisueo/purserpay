@@ -100,23 +100,16 @@ export const heroBenefits: HeroBenefit[] = [
 
 // --- Bloques 1–4: the workflow modules (#how) -------------------------------
 
-export type ModulePoint = {
-  label: string
-  body: string
-  /** Leading verify marker: "single" = ✓, "double" = ✓✓. Absent = no marker
-   *  (a descriptive technical property, not a verification status). */
-  check?: "single" | "double"
-}
-
 export type Module = {
   n: string
   eyebrow: string
   title: string
   body: string
-  points?: ModulePoint[]
-  /** "video" renders a structural 16:9 walkthrough slot; "defenses" renders the four
-   *  on-chain-defense cards (Module 01) — both replace the points list. */
-  variant?: "video" | "defenses"
+  /** Every module renders its copy full-width on top and a full-width visual below.
+   *  The variant selects that visual: "defenses" = Module 01's four on-chain-defense
+   *  cards, "privacy" = Module 02's two privacy panels, "video" = Module 04's 16:9
+   *  walkthrough slot, and absent = Module 03's two-sided proof cards (the default). */
+  variant?: "video" | "defenses" | "privacy"
 }
 
 export const modules: Module[] = [
@@ -130,18 +123,9 @@ export const modules: Module[] = [
   {
     n: "02",
     eyebrow: "your data, your device",
-    title: "CSV import, parsed on your machine",
-    body: "Bring the spreadsheet you already keep. Purser maps your columns to name, address and amount right here in the browser and drops them straight into the payout table — no reformatting, no re-keying.",
-    points: [
-      {
-        label: "100% client-side",
-        body: "Every CSV record and payout amount is parsed entirely in your browser. No spreadsheet data ever leaves your machine, reaches our servers, or passes to a third party.",
-      },
-      {
-        label: "A local sandbox",
-        body: "Your roster lives only in this browser's local sandbox, on your own machine. Clearing your browser's site data and cookies wipes it permanently — it was never kept anywhere else.",
-      },
-    ],
+    title: "Your data isn't our business. Your privacy is.",
+    body: "99% of what you touch — your roster, your CSV, your payout history — is parsed and stored only in your browser. It never reaches our servers, because we never built a place to put it. The remaining 1% is the minimal KYC you enter at pay time — encrypted, and dissociated from who you pay.",
+    variant: "privacy",
   },
   {
     n: "03",
@@ -192,6 +176,35 @@ export const defenseCards: DefenseCard[] = [
     id: "atomic",
     title: "All-or-nothing",
     body: "A batch either settles in full or not at all. One bad row reverts the entire transaction — you never end up with half a payroll paid and the rest in limbo. A problem address means zero damage, not an irreparable partial send.",
+  },
+]
+
+// --- Module 02's two privacy panels (#how) ----------------------------------
+// PrivacyPanels.tsx renders these as two side-by-side panels, each with a micro-diagram.
+// The angle is honest, not absolutist: the 99% (roster/CSV/history) is device-local and never
+// leaves the machine; the 1% (minimal billing KYC) IS stored server-side but ENCRYPTED AT REST
+// and DISSOCIATED from payout activity — keyed by a one-way wallet hash (src/app/actions/
+// compliance.ts + supabase/migrations/0001_compliance_schema.sql). FIDELITY (Variant C,
+// owner-CLOSED): the copy says "encrypted / dissociated / never sold" and must NEVER claim "we
+// can't read it" — the server holds the pgcrypto key, so that would contradict docs/04 + the
+// shipped /privacy + /legal pages. The diagram markup is structural (lives in the component);
+// only the panel copy lives here.
+export type PrivacyPanel = {
+  id: "local" | "kyc"
+  title: string
+  body: string
+}
+
+export const privacyPanels: PrivacyPanel[] = [
+  {
+    id: "local",
+    title: "The 99% never leaves your machine",
+    body: "Your roster, your imported CSV, and every past payout live in a local database inside this browser — on your machine, nowhere else. Nothing syncs, nothing uploads. Clear your browser's site data and it's gone for good.",
+  },
+  {
+    id: "kyc",
+    title: "The 1%: encrypted, minimal, never sold",
+    body: "The minimal KYC you enter at pay time is encrypted at rest and keyed to a one-way hash of your wallet — dissociated by design, so your identity is never tied to who you pay. We keep the least the law allows, and never share or sell it.",
   },
 ]
 
