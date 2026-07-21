@@ -9,7 +9,7 @@
 
 ## 1. What the machine is (one paragraph)
 
-PurserPay is a **non-custodial, no-KYC USDT (TRON) batch-payout tool**. A de-banked
+PurserPay is a **non-custodial, minimal-billing USDT (TRON) batch-payout tool**. A de-banked
 business loads its team roster, the app validates every address and computes the batch,
 and the business signs **one** transaction with its **own** wallet. USDT moves straight
 from the payer's wallet to each payee. Purser never holds funds, keys, or broadcast. A

@@ -47,7 +47,7 @@ export function DefenseCards() {
                 className={cn(
                   "flex size-8 shrink-0 items-center justify-center rounded-lg",
                   focal
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-primary/10 text-primary"
                     : "bg-primary/10 text-primary"
                 )}
               >

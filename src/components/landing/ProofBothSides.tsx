@@ -18,18 +18,21 @@ import { proofAgencyRows, proofPayeeReceipts } from "./content"
 // nothing the product doesn't render. GREEN = PAID only — every green mark here is a genuinely paid
 // state (● Paid, ✓✓ Paid before). No client state, no timers, no motion — safe to server-render.
 // The two cards sit side by side on desktop and stack on narrow screens; the copy lives above them
-// (Module 03 uses the full-width stacked layout in Modules.tsx, not the 50/50 shell).
+// (Module 03 uses the full-width stacked layout in Modules.tsx, not the 50/50 shell). On desktop the
+// grid stretches both cards to EQUAL height (items-stretch + each figure/card h-full), and each
+// card's footer is bottom-anchored (mt-auto) so the two footers align even when the row counts /
+// line heights differ; stacked on mobile, each card falls back to its natural height.
 export function ProofBothSides() {
   return (
-    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 lg:gap-7">
-      <figure className="m-0">
+    <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2 lg:gap-7">
+      <figure className="m-0 flex h-full flex-col">
         <figcaption className="mb-2.5 font-mono text-[11px] tracking-[0.14em] text-muted-foreground">
           What you see
         </figcaption>
         <AgencyCard />
       </figure>
 
-      <figure className="m-0">
+      <figure className="m-0 flex h-full flex-col">
         <figcaption className="mb-2.5 font-mono text-[11px] tracking-[0.14em] text-muted-foreground">
           What your payees see
         </figcaption>
@@ -40,7 +43,7 @@ export function ProofBothSides() {
 }
 
 const cardShell =
-  "overflow-hidden rounded-[12px] border border-border bg-card shadow-[0_1px_2px_rgba(17,16,20,0.04),0_18px_40px_-30px_rgba(17,16,20,0.22)]"
+  "flex flex-1 flex-col overflow-hidden rounded-[12px] border border-border bg-card shadow-[0_1px_2px_rgba(17,16,20,0.04),0_18px_40px_-30px_rgba(17,16,20,0.22)]"
 
 // The agency's dashboard the moment a batch has cleared: a "Payout" header with an All-paid chip,
 // each recipient shown Paid (green) with a ✓✓ Paid-before line + the receipt (PDF) and globe
@@ -91,7 +94,7 @@ function AgencyCard() {
         </div>
       ))}
 
-      <div className="flex items-center justify-between gap-3 bg-[#FCFBFA] px-4 py-3">
+      <div className="mt-auto flex items-center justify-between gap-3 bg-[#FCFBFA] px-4 py-3">
         <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-foreground">
           <Copy className="size-3.5 text-muted-foreground" aria-hidden="true" />
           Payment link for your payees
@@ -159,7 +162,7 @@ function PayeeCard() {
         </div>
       ))}
 
-      <div className="bg-[#FCFBFA] px-4 py-3 text-[10.5px] leading-[1.5] text-muted-foreground">
+      <div className="mt-auto bg-[#FCFBFA] px-4 py-3 text-[10.5px] leading-[1.5] text-muted-foreground">
         Every row is a real disperse from PurserPay&rsquo;s payout contract.
       </div>
     </div>

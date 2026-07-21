@@ -1,6 +1,6 @@
 # PurserPay
 
-**Non-custodial, no-KYC USDT payouts for de-banked businesses.**
+**Non-custodial USDT payouts for de-banked businesses — minimal, self-declared billing (name, country, tax ID).**
 Load your team, sign once, and pay everyone straight from your own wallet — Purser never
 touches your money, your keys, or your list.
 

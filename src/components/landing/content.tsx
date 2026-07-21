@@ -85,12 +85,12 @@ export const heroBenefits: HeroBenefit[] = [
     body: "Your roster and payment history live in a local database on your device. No data leaves your machine, and one button wipes it all.",
   },
   {
-    title: "Anonymous by design — minimal KYC, completed in under a minute.",
-    body: "Just name, country, and tax ID at pay time.",
+    title: "Three fields, then you pay.",
+    body: "Just name, country, and tax ID at pay time — no document uploads, no verification queue, no account review. You're paying in under a minute.",
   },
   {
     title: "Your payees get their own receipts.",
-    body: "Each recipient opens an anonymous link to view, download (PDF), and on-chain-verify every payment you sent them — and you get a full record of every payout in your dashboard.",
+    body: "Each recipient opens a link to view, download (PDF), and on-chain-verify every payment you sent them — and you get a full record of every payout in your dashboard.",
   },
   {
     title: "One flat subscription — never a cut of your volume.",
@@ -124,14 +124,14 @@ export const modules: Module[] = [
     n: "02",
     eyebrow: "your data, your device",
     title: "Your data isn't our business. Your privacy is.",
-    body: "99% of what you touch — your roster, your CSV, your payout history — is parsed and stored only in your browser. It never reaches our servers, because we never built a place to put it. The remaining 1% is the minimal KYC you enter at pay time — encrypted, and dissociated from who you pay.",
+    body: "99% of what you touch — your roster, your CSV, your payout history — is parsed and stored only in your browser. It never reaches our servers, because we never built a place to put it. The remaining 1% is the minimal billing info you enter at pay time — encrypted at rest and dissociated from your payouts, so your billing details and who you pay are never linked in our systems.",
     variant: "privacy",
   },
   {
     n: "03",
     eyebrow: "proof, on file",
     title: "The same proof, on both sides.",
-    body: "The moment a batch confirms on-chain, PurserPay writes an immutable receipt — timestamped, each recipient linked to its Tronscan hash. You get a clean report for your books. Your payees open one anonymous link to view, download, and on-chain-verify every payment you sent them. Same on-chain truth, two views — no “did you pay me?”, no disputes.",
+    body: "The moment a batch confirms on-chain, PurserPay writes an immutable receipt — timestamped, each recipient linked to its Tronscan hash. You get a clean report for your books. Your payees open one link to view, download, and on-chain-verify every payment you sent them. Same on-chain truth, two views — no “did you pay me?”, no disputes.",
   },
   {
     n: "04",
@@ -182,15 +182,15 @@ export const defenseCards: DefenseCard[] = [
 // --- Module 02's two privacy panels (#how) ----------------------------------
 // PrivacyPanels.tsx renders these as two side-by-side panels, each with a micro-diagram.
 // The angle is honest, not absolutist: the 99% (roster/CSV/history) is device-local and never
-// leaves the machine; the 1% (minimal billing KYC) IS stored server-side but ENCRYPTED AT REST
-// and DISSOCIATED from payout activity — keyed by a one-way wallet hash (src/app/actions/
-// compliance.ts + supabase/migrations/0001_compliance_schema.sql). FIDELITY (Variant C,
-// owner-CLOSED): the copy says "encrypted / dissociated / never sold" and must NEVER claim "we
+// leaves the machine; the 1% (the three billing fields — name/country/tax ID) IS stored server-side
+// but ENCRYPTED AT REST and DISSOCIATED from payout activity — keyed by a one-way wallet hash
+// (src/app/actions/compliance.ts + supabase/migrations/0001_compliance_schema.sql). FIDELITY
+// (Variant C, owner-CLOSED): the copy says "encrypted / dissociated" and must NEVER claim "we
 // can't read it" — the server holds the pgcrypto key, so that would contradict docs/04 + the
 // shipped /privacy + /legal pages. The diagram markup is structural (lives in the component);
 // only the panel copy lives here.
 export type PrivacyPanel = {
-  id: "local" | "kyc"
+  id: "local" | "billing"
   title: string
   body: string
 }
@@ -202,9 +202,9 @@ export const privacyPanels: PrivacyPanel[] = [
     body: "Your roster, your imported CSV, and every past payout live in a local database inside this browser — on your machine, nowhere else. Nothing syncs, nothing uploads. Clear your browser's site data and it's gone for good.",
   },
   {
-    id: "kyc",
-    title: "The 1%: encrypted, minimal, never sold",
-    body: "The minimal KYC you enter at pay time is encrypted at rest and keyed to a one-way hash of your wallet — dissociated by design, so your identity is never tied to who you pay. We keep the least the law allows, and never share or sell it.",
+    id: "billing",
+    title: "The 1%: encrypted, minimal, dissociated",
+    body: "The three billing fields you enter are encrypted at rest and keyed to a one-way hash of your wallet — never linked to who you pay. We hold the least we can, and we keep your billing identity separate from your payout activity.",
   },
 ]
 

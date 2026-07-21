@@ -188,7 +188,7 @@ Since the Free Tier, the dashboard admits any connected wallet (free mode). The 
 form (name, country, tax ID) is therefore **no longer demanded to enter** — it lives only
 in the subscribe/checkout flow (`SubscribeDialog` → `storeBillingProfile`), where we
 actually need it to issue an invoice. This keeps the free path (connect → import → screen →
-pay 1) free of any KYC-shaped step, consistent with the "no-KYC" brand. The encryption /
+pay 1) free of any identity-verification step, consistent with the minimal-billing brand. The encryption /
 dissociation of that PII is unchanged (§2–§4).
 
 ## 6b. Free-tier hashing (same pepper as OFAC)

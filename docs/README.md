@@ -27,7 +27,7 @@ source.
 
 ## What PurserPay is (one paragraph)
 
-A **non-custodial, no-KYC USDT (TRON) batch-payout tool** for de-banked businesses paying a
+A **non-custodial, minimal-billing USDT (TRON) batch-payout tool** for de-banked businesses paying a
 distributed team. The business loads its roster; the app validates addresses, computes the
 batch, and compiles an **unsigned** transaction the business signs with its **own** wallet.
 USDT goes straight from their wallet to their team. **Purser never touches funds, keys, or

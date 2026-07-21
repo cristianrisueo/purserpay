@@ -7,7 +7,7 @@ import { privacyPanels, type PrivacyPanel } from "./content"
 // Module 02's visual (#how — "Your data isn't our business. Your privacy is."): two side-by-side
 // panels, each stating one honest privacy truth and drawing it as a two-node "severed-flow"
 // micro-diagram. Panel 1 — the 99% (roster/CSV/history) is device-local and never makes the trip
-// to our servers. Panel 2 — the 1% (minimal billing KYC) IS held server-side, but encrypted at
+// to our servers. Panel 2 — the 1% (the three billing fields) IS held server-side, but encrypted at
 // rest and DISSOCIATED: its one-way wallet-hash key is never linked to who you pay (Variant C —
 // see content.tsx + src/app/actions/compliance.ts + supabase/migrations/0001_compliance_schema.sql).
 // GREEN is never used here (paid-only rule) and the ✕ is calm muted-ink — this severing is a
@@ -90,7 +90,7 @@ function SeveredFlow({
   caption: string
 }) {
   return (
-    <div className="mt-5 rounded-xl border border-border bg-bg-band p-3.5">
+    <div className="mt-auto rounded-xl border border-border bg-bg-band p-3.5">
       <div className="flex items-stretch justify-center gap-1.5">
         {left}
         <SeveredConnector />
@@ -114,10 +114,10 @@ const DIAGRAMS: Record<PrivacyPanel["id"], ReactNode> = {
       caption="Your data never makes the trip."
     />
   ),
-  kyc: (
+  billing: (
     <SeveredFlow
       left={
-        <DiagramNode icon={Lock} label="Encrypted KYC" sub="name · country · tax ID" />
+        <DiagramNode icon={Lock} label="Encrypted billing" sub="name · country · tax ID" />
       }
       right={<DiagramNode icon={Wallet} label="Who you pay" sub="your payouts" />}
       caption="Dissociated — your identity is never linked to your payouts."
@@ -127,11 +127,11 @@ const DIAGRAMS: Record<PrivacyPanel["id"], ReactNode> = {
 
 function Panel({ panel }: { panel: PrivacyPanel }) {
   return (
-    <figure className="m-0 flex flex-col rounded-2xl border border-border bg-card p-6 shadow-[0_1px_2px_rgba(17,16,20,0.04),0_18px_40px_-30px_rgba(17,16,20,0.22)]">
+    <figure className="m-0 flex h-full flex-col rounded-2xl border border-border bg-card p-6 shadow-[0_1px_2px_rgba(17,16,20,0.04),0_18px_40px_-30px_rgba(17,16,20,0.22)]">
       <figcaption className="text-[15px] font-semibold text-foreground">
         {panel.title}
       </figcaption>
-      <p className="mt-2.5 text-[13.5px] leading-[1.55] text-muted-foreground">
+      <p className="mt-2.5 mb-5 text-[13.5px] leading-[1.55] text-muted-foreground">
         {panel.body}
       </p>
       {DIAGRAMS[panel.id]}
@@ -141,7 +141,7 @@ function Panel({ panel }: { panel: PrivacyPanel }) {
 
 export function PrivacyPanels() {
   return (
-    <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2 lg:gap-7">
+    <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2 lg:gap-7">
       {privacyPanels.map((panel) => (
         <Panel key={panel.id} panel={panel} />
       ))}

@@ -52,8 +52,14 @@ export function VideoWalkthrough({ label }: { label: string }) {
           sizes="(min-width: 768px) min(1088px, calc(100vw - 4rem)), 100vw"
           className="object-cover"
         />
-        {/* Soft scrim so the play affordance stays legible over the screenshot. */}
-        <span className="absolute inset-0 bg-foreground/15" />
+        {/* Blur + dark scrim over the poster. The frame underneath is a dashboard caught
+            mid-error (a short-balance state) — reads as "something's broken" before play, so
+            we deliberately soften it to illegibility: backdrop-blur diffuses the image behind
+            this layer (you sense a UI, can't read it), and the foreground/40 ink scrim gives
+            the white play glyph its contrast. Neutral ink only — never a brand hue to darken.
+            The live video (lightbox) is a separate surface and is never blurred, so pressing
+            play reveals it clean; the Dialog's own fade carries the transition (no flicker). */}
+        <span className="absolute inset-0 bg-foreground/40 backdrop-blur-md" />
 
         <span className="relative z-10 flex flex-col items-center gap-3">
           <span className="transition-transform duration-200 group-hover:scale-105">

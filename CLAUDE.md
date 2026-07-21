@@ -1,6 +1,6 @@
 # PurserPay — Project Context (CLAUDE.md)
 
-PurserPay is a **non-custodial, no-KYC USDT payout tool** for de-banked businesses
+PurserPay is a **non-custodial, minimal-billing USDT payout tool** for de-banked businesses
 that pay a distributed team — remote staff, contractors, freelancers — in USDT on
 TRON, because banks and PayPal/Wise/Deel shut down their accounts for operating in
 gray-area or adult-adjacent industries. Today they do it by hand: messy spreadsheets,
@@ -130,10 +130,10 @@ never the roster).
   accent — the only unfalsifiable, on-chain-`require` defense). **Module 02 ("Your data isn't our
   business. Your privacy is.")** shows **two side-by-side privacy panels** (`PrivacyPanels.tsx`),
   each with a **severed-flow micro-diagram**: "The 99% never leaves your machine" (device-local
-  roster/CSV/history ✕→ our servers · nothing) + "The 1%: encrypted, minimal, never sold" (the
-  minimal billing KYC — **encrypted at rest + dissociated**, keyed by a one-way wallet hash, ✕→
-  never linked to who you pay). Copy is **Variant-C-honest**: it says *encrypted / dissociated /
-  never sold* and **never** "we can't read it" — the server holds the pgcrypto key (`compliance.ts`
+  roster/CSV/history ✕→ our servers · nothing) + "The 1%: encrypted, minimal, dissociated" (the
+  three billing fields — name · country · tax ID — **encrypted at rest + dissociated**, keyed by a
+  one-way wallet hash, ✕→ never linked to who you pay). Copy is **Variant-C-honest**: it says
+  *encrypted / dissociated* and **never** "we can't read it" — the server holds the pgcrypto key (`compliance.ts`
   + `docs/04` + `/privacy` + `/legal`); GREEN is never used in the diagrams (paid-only) and the ✕ is
   calm muted-ink (a privacy win, not an error). **Module 03 ("The same proof, on both sides")**
   shows **two side-by-side proof cards** (`ProofBothSides.tsx`): the agency dashboard "What you see"
@@ -565,10 +565,11 @@ lines still reflect the old model and must be reconciled in a dedicated copy pas
   column, each item led by the brand's **aqua ✓✓** double-check (bold lead line over a muted sentence),
   sized to **fill the column so it aligns with the card** on desktop. **Every checklist claim is
   fidelity-bound to a shipped feature** — pre-flight address checks, device-local roster + one-button
-  wipe, self-declared minimal KYC at pay time, the affiliate receipt portal + dashboard record, and one
+  wipe, self-declared minimal billing at pay time, the affiliate receipt portal + dashboard record, and one
   flat on-chain subscription with no volume cut — with truthful wording guards ("invalid formats" not
-  "typos"; "minimal KYC in under a minute" not "100% anonymous"; "one flat subscription" not "two
-  tariffs"). The dissociation message now lives in the checklist (items 2 + 5), **not** the headline.
+  "typos"; "three fields, then you pay" with the closed "no document uploads / no verification queue /
+  no account review" framing — never the bare word "anonymous" or "no KYC"; "one flat subscription" not
+  "two tariffs"). The dissociation message now lives in the checklist (items 2 + 5), **not** the headline.
   Copy is the single-source `heroBenefits` in `content.tsx`.
 - `src/components/landing/HeroPayoutCard.tsx` + `content.tsx` — still a **faithful, STATIC replica of
   the real dashboard pre-flight**, now **tightened to four rows** (Priya removed): a paid-before row
