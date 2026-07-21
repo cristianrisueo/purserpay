@@ -6,7 +6,11 @@ import {
   validatePayeeShape,
   type PayeeInput,
 } from "@/lib/payeeValidation"
-import { splitByAddress } from "@/lib/rosterDedupe"
+import {
+  groupAddressConflicts,
+  splitByAddress,
+  type RowConflictGroup,
+} from "@/lib/rosterDedupe"
 
 export type FieldKey = "name" | "role" | "address" | "amount"
 
@@ -99,7 +103,15 @@ export function parseCsvTable(text: string): TableParseResult {
 }
 
 export type MappingApplyResult =
-  | { ok: true; rows: PayeeInput[]; conflicts: string[] }
+  | {
+      ok: true
+      /** The unique rows, safe to import immediately. */
+      rows: PayeeInput[]
+      /** One human message per conflicting address group (the S-0 retention text). */
+      conflicts: string[]
+      /** The same conflicts as structured, competing rows — for the in-app resolver (UX-3). */
+      conflictGroups: RowConflictGroup<PayeeInput>[]
+    }
   | { ok: false; errors: string[] }
 
 /** Builds validated payee rows from the raw table using the user's own
@@ -155,16 +167,18 @@ export function applyMapping(
   }
 
   // Dedupe within the file. RETENTION, not discard: every row sharing an address
-  // is held back (none imported) so a duplicate never silently picks a winner;
-  // the user resolves and re-adds those. Because replaceRoster is a clear +
-  // bulkAdd of the whole file, "import uniques + retain duplicates" means write
-  // ONLY the non-conflicting rows and surface the conflicting ones for the user
-  // to fix. Every shape error already returned above, so here rows[i] maps 1:1 to
-  // table.rows[i] and the file row number is i + 2 (header + 1-based), matching
-  // the "Row ${i + 2}" shape messages.
+  // is held back (none imported) so a duplicate never silently picks a winner. Since
+  // UX-3 the user resolves those IN-APP (the resolver reads `conflictGroups`), instead
+  // of re-editing their spreadsheet — but the rule is unchanged: uniques import, the
+  // conflicting rows import to NEITHER until the user explicitly picks one. Because
+  // replaceRoster is a clear + bulkAdd of the whole file, "import uniques" means write
+  // ONLY the non-conflicting rows here; the picks are appended afterward. Every shape
+  // error already returned above, so rows[i] maps 1:1 to table.rows[i] and the file row
+  // number is i + 2 (header + 1-based), matching the "Row ${i + 2}" shape messages.
   const split = splitByAddress(rows, (i) => i + 2)
   const uniques = split.uniqueIndices.map((i) => rows[i])
-  return { ok: true, rows: uniques, conflicts: split.conflicts }
+  const conflictGroups = groupAddressConflicts(rows, (i) => i + 2)
+  return { ok: true, rows: uniques, conflicts: split.conflicts, conflictGroups }
 }
 
 /** Blocks a mapping where two different fields point at the identical

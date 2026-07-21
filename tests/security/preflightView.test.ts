@@ -12,7 +12,11 @@ import {
   summarizePreflight,
   hasBlockingRow,
   toneForKind,
+  rowLineFor,
+  lineTone,
   type SecurityTone,
+  type RowLine,
+  type LineTone,
 } from "../../src/lib/security/preflightView.ts"
 import { lastChars } from "../../src/lib/format.ts"
 
@@ -75,6 +79,61 @@ test("GREEN-IS-PAID INVARIANT: no security kind maps to a success/paid tone", ()
     assert.ok(allowed.includes(tone), `${k} → ${tone} must be a non-paid tone`)
     assert.notEqual(tone as string, "success")
     assert.notEqual(tone as string, "paid")
+  }
+})
+
+// --- rowLineFor (UX-2 — the single primary line) ----------------------------
+
+test("rowLineFor precedence: invalid > frozen > paid-before > verifying > unverified > valid", () => {
+  assert.equal(
+    rowLineFor({ invalid: true, frozen: true, paidBefore: true, verifying: true, unverified: true }),
+    "invalid"
+  )
+  assert.equal(rowLineFor({ frozen: true, paidBefore: true, verifying: true, unverified: true }), "frozen")
+  assert.equal(rowLineFor({ paidBefore: true, verifying: true, unverified: true }), "paid-before")
+  assert.equal(rowLineFor({ verifying: true, unverified: true }), "verifying")
+  assert.equal(rowLineFor({ unverified: true }), "unverified")
+  assert.equal(rowLineFor({}), "valid")
+})
+
+test("frozen outranks paid-before (a since-frozen address you paid before still shows frozen)", () => {
+  assert.equal(rowLineFor({ frozen: true, paidBefore: true }), "frozen")
+})
+
+test("NO 'format-ok' limbo: a clean well-formed row resolves to 'valid', never a grey resting state", () => {
+  const all: RowLine[] = [
+    rowLineFor({ invalid: true }),
+    rowLineFor({ frozen: true }),
+    rowLineFor({ paidBefore: true }),
+    rowLineFor({ verifying: true }),
+    rowLineFor({ unverified: true }),
+    rowLineFor({}),
+  ]
+  assert.equal(rowLineFor({}), "valid")
+  assert.ok(!all.includes("valid-format" as RowLine))
+  assert.ok(!all.includes("format-ok" as RowLine))
+})
+
+test("D-7: a verifying or unverified row is NEVER 'valid' (never assumed safe while unread/failed)", () => {
+  assert.notEqual(rowLineFor({ verifying: true }), "valid")
+  assert.notEqual(rowLineFor({ unverified: true }), "valid")
+})
+
+// --- lineTone (GREEN = PAID guardrail for the primary line) ------------------
+
+test("GREEN = PAID: only 'paid-before' maps to success; 'valid' is primary (aqua), never green", () => {
+  assert.equal(lineTone("paid-before"), "success")
+  assert.equal(lineTone("valid"), "primary")
+  assert.notEqual(lineTone("valid") as string, "success")
+})
+
+test("no non-paid line is ever green (success)", () => {
+  const lines: RowLine[] = ["invalid", "frozen", "verifying", "unverified", "valid"]
+  const allowed: LineTone[] = ["primary", "danger", "muted"]
+  for (const l of lines) {
+    const tone = lineTone(l)
+    assert.notEqual(tone as string, "success", `${l} → ${tone} must not be green`)
+    assert.ok(allowed.includes(tone))
   }
 })
 

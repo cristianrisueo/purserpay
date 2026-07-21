@@ -1,6 +1,7 @@
 import { Users } from "lucide-react"
 
 import type { PayeeInput } from "@/lib/payeeValidation"
+import type { RowConflictGroup } from "@/lib/rosterDedupe"
 
 import { AddPayeeButton } from "./AddPayeeButton"
 import { ImportCsvDialog } from "./ImportCsvDialog"
@@ -8,7 +9,10 @@ import { ImportCsvDialog } from "./ImportCsvDialog"
 type EmptyRosterProps = {
   rosterCount: number
   onAddPayee: (input: PayeeInput) => Promise<void>
-  onImportRoster: (rows: PayeeInput[]) => Promise<void>
+  onImportRoster: (
+    rows: PayeeInput[],
+    conflictGroups?: RowConflictGroup<PayeeInput>[]
+  ) => Promise<void>
 }
 
 export function EmptyRoster({

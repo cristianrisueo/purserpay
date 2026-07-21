@@ -1,5 +1,5 @@
 import type { ColumnDef, RowData } from "@tanstack/react-table"
-import { Ban, FileText, Globe, HelpCircle, Landmark, LoaderCircle } from "lucide-react"
+import { Ban, FileText, Globe, Landmark, LoaderCircle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -8,7 +8,7 @@ import { formatUsdt, truncateAddress } from "@/lib/format"
 import type { PayeeInput } from "@/lib/payeeValidation"
 import type { Payee } from "@/lib/roster"
 import type { BlockReason, TxState } from "@/hooks/usePayout"
-import { rowSecurityFor } from "@/lib/security/preflightView"
+import { rowLineFor } from "@/lib/security/preflightView"
 import { txExplorerUrl } from "@/lib/tron/config"
 import type { VerifyLevel } from "@/lib/tron/validation"
 
@@ -39,8 +39,8 @@ declare module "@tanstack/react-table" {
     rowFrozen: Map<string, true>
     /** payees whose blacklist read failed/absent (D-7; muted, advisory, never green, never blocks). */
     rowUnverified: Set<string>
-    /** true while the pay-time blacklist read is in flight (a neutral "checking" state per row). */
-    preflightChecking: boolean
+    /** payees whose eager on-chain read is queued/in-flight (a neutral "Verifying…" state per row). */
+    rowChecking: Set<string>
     /** live tx state per payee id during a payout. */
     rowTxState: Map<string, TxState>
     /** tx hash per payee id (for the Tronscan link on a paid/pending row). */
@@ -102,15 +102,18 @@ export const columns: ColumnDef<Payee>[] = [
       const id = row.original.id
       const level = meta.verifyByPayee.get(id) ?? "valid-format"
       const sanctioned = meta.rowOfacFlagged.has(id)
-      // The frozen/exchange/unverified security state (S-3). `checking` is scoped to selected rows
-      // so a whole-batch read doesn't paint an unrelated row "Checking…". Exchange is orthogonal
-      // (pure/always-live) and renders as its own amber chip alongside the validation line.
-      const sec = rowSecurityFor({
+      // ONE primary line per the closed row-state model (UX-2). The eager pre-flight drives
+      // verifying/frozen/unverified; the wallet double-check drives invalid/paid-before; a clean
+      // resolved row is "Valid on TRON". There is no grey "Format ok" resting state. Exchange is
+      // orthogonal (pure/always-live) and renders as its own amber chip alongside the line.
+      const line = rowLineFor({
+        invalid: level === "invalid",
+        paidBefore: level === "paid-before",
         frozen: meta.rowFrozen.has(id),
+        verifying: meta.rowChecking.has(id),
         unverified: meta.rowUnverified.has(id),
-        checking: meta.preflightChecking && row.getIsSelected(),
-        exchange: meta.rowExchange.get(id),
       })
+      const exchange = meta.rowExchange.get(id)
       const chip =
         "inline-flex w-fit items-center gap-1 text-[11.5px] font-medium leading-none"
       return (
@@ -125,7 +128,7 @@ export const columns: ColumnDef<Payee>[] = [
             <span className="inline-flex w-fit items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive">
               Sanctioned — blocked
             </span>
-          ) : sec.kind === "frozen" ? (
+          ) : line === "frozen" ? (
             // Frozen is a hard block — red, ALWAYS visible (never hover-only). It REPLACES the
             // validation line; the row's Pay is disabled and it must be removed to continue.
             <span
@@ -137,34 +140,17 @@ export const columns: ColumnDef<Payee>[] = [
             </span>
           ) : (
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-              <VerifyBadge level={level} />
-              {sec.exchange ? (
-                // Advisory only (amber) — does NOT replace the line, does NOT block. Honest about
-                // partial coverage (S-2 GAP): "looks like" an exchange, credit policy unknown.
+              <VerifyBadge line={line} />
+              {/* Advisory only (amber) — does NOT replace the line, does NOT block. Honest about
+                  partial coverage (S-2 GAP): "looks like" an exchange, credit policy unknown. Not
+                  shown on an invalid (malformed) address. */}
+              {exchange && line !== "invalid" ? (
                 <span
                   className={cn(chip, "text-warning")}
                   title="This looks like an exchange deposit address. Verify your exchange credits transfers from contracts, or the payee may not see the payment."
                 >
                   <Landmark className="size-3.5" aria-hidden="true" />
                   Exchange?
-                </span>
-              ) : null}
-              {sec.kind === "checking" ? (
-                <span className={cn(chip, "text-muted-foreground")}>
-                  <LoaderCircle
-                    className="size-3 animate-spin"
-                    aria-hidden="true"
-                  />
-                  Checking…
-                </span>
-              ) : sec.kind === "unverified" ? (
-                // D-7 in the UI: couldn't confirm safe → neutral, never green, never blocking.
-                <span
-                  className={cn(chip, "text-muted-foreground")}
-                  title="Couldn't verify this address right now — it'll be checked again on-chain when you pay."
-                >
-                  <HelpCircle className="size-3.5" aria-hidden="true" />
-                  Unverified
                 </span>
               ) : null}
             </div>

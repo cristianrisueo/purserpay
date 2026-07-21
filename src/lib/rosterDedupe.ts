@@ -110,3 +110,65 @@ function truncateForDisplay(address: string, lead = 6, tail = 5): string {
   if (address.length <= lead + tail + 1) return address
   return `${address.slice(0, lead)}…${address.slice(-tail)}`
 }
+
+// --- Interactive resolution (UX-3) ------------------------------------------
+//
+// `splitByAddress` (above) is the retention SoT: it holds EVERY row of a conflict
+// back and hands the user text to fix in their spreadsheet. The functions below add
+// the *structured* form of the same conflicts so the user can resolve them IN-APP —
+// see the actual competing rows side by side and pick one. They change NOTHING about
+// the dedupe rule (still RETAIN, never DISCARD; still never auto-pick a winner); they
+// only carry the real rows instead of a message, and give back the user's explicit
+// choice. Both reuse `findDuplicateAddresses` as the single source of truth for what
+// a conflict is.
+
+/** One competing row in a conflict group, tagged with the file row number shown
+ *  to the user ("Row 4"). */
+export type ConflictCandidate<T> = { row: T; rowNumber: number }
+
+/** Every row of one shared-address group, as the actual rows — for side-by-side
+ *  display in the resolver. */
+export type RowConflictGroup<T> = {
+  /** The base58 string every candidate shares. */
+  address: string
+  /** The competing rows (always ≥2), in first-appearance order. */
+  candidates: ConflictCandidate<T>[]
+}
+
+/** The structured form of `findDuplicateAddresses`: each shared-address group with
+ *  its actual competing rows (not just indices). `rowNumber(i)` maps an input index
+ *  to the number shown to the user (CSV path: `i => i + 2` — header row + 1-based),
+ *  matching `splitByAddress`. `[]` when every address is unique. */
+export function groupAddressConflicts<T extends { address: string }>(
+  rows: readonly T[],
+  rowNumber: (i: number) => number
+): RowConflictGroup<T>[] {
+  return findDuplicateAddresses(rows).map((group) => ({
+    address: group.address,
+    candidates: group.indices.map((i) => ({ row: rows[i], rowNumber: rowNumber(i) })),
+  }))
+}
+
+/** A user's choice for one conflict group: the index of the candidate to KEEP, or
+ *  `"discard"` to import none of them. An address with no entry (or `undefined`) is
+ *  UNRESOLVED. */
+export type ConflictSelection = number | "discard"
+
+/** The rows the user chose to keep, one (at most) per group. RETAIN, never auto-pick:
+ *  a group that is unresolved (no selection) OR `"discard"` contributes NOTHING — only
+ *  a valid numeric candidate index yields a kept row. So empty selections → `[]` (the
+ *  system never picks a winner the user didn't choose). Keyed by `group.address`, which
+ *  is unique across groups. */
+export function resolveConflictPicks<T>(
+  groups: readonly RowConflictGroup<T>[],
+  selections: Readonly<Record<string, ConflictSelection | undefined>>
+): T[] {
+  const picks: T[] = []
+  for (const group of groups) {
+    const sel = selections[group.address]
+    if (typeof sel === "number" && group.candidates[sel]) {
+      picks.push(group.candidates[sel].row)
+    }
+  }
+  return picks
+}

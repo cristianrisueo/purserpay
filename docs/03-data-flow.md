@@ -61,10 +61,21 @@ dependency-free) is the single source of truth, used by both paths:
   error *before* persisting (`findAddressOwner`, excluding the row being edited so re-saving
   a payee with its own address is allowed); the existing row is left untouched. `PayeeFormDialog`
   surfaces it in the same error box as shape validation.
-- **CSV import** (`applyMapping` → `splitByAddress`): imports the **unique** rows and holds
-  back **every** row of a shared-address group (none is imported — a duplicate never silently
-  picks a winner), surfacing each conflict by file row number ("Rows 4 and 12 …") for the user
-  to resolve and re-add. `replaceRoster` also carries a defense-in-depth `findDuplicateAddresses`
+- **CSV import** (`applyMapping` → `splitByAddress` + `groupAddressConflicts`): imports the
+  **unique** rows immediately and holds back **every** row of a shared-address group (none is
+  imported — a duplicate never silently picks a winner). Since **UX-3** the user resolves those
+  conflicts **in-app** instead of re-editing their spreadsheet: `applyMapping` also returns the
+  **structured** conflicts (the actual competing rows, via `groupAddressConflicts` — the same
+  `findDuplicateAddresses` SoT), and a **Dashboard-root `ResolveConflictsDialog`** shows the
+  competing rows side by side so the operator picks the one to keep (or **discards** the group).
+  The picked rows are appended via the normal `addPayee` path. **The retain-not-discard rule is
+  unchanged** — nothing is chosen for you (no auto-pick); a group left unresolved, or discarded,
+  imports **neither** row (exactly the S-0 behavior). **Dismissing** the resolver is the S-0
+  fallback: uniques imported, conflicts left unimported. The resolver lives at the Dashboard root
+  (not inside `ImportCsvDialog`) because importing the uniques flips `isEmpty` and unmounts the
+  `EmptyRoster` that hosts the import dialog — so it is driven by `usePayout` state
+  (`importConflicts` / `resolveImportConflicts` / `cancelImportConflicts`), like
+  `ExchangeConfirmDialog`. `replaceRoster` also carries a defense-in-depth `findDuplicateAddresses`
   guard so the uniqueness invariant holds for any caller. (Dedupe is **within the incoming
   file**; a full overwrite replaces the prior roster anyway.)
 
@@ -121,18 +132,28 @@ owner-CLOSED** (encoded in `src/lib/security/preflightView.ts`, asserted in
 
 - **GREEN = PAID, and ONLY paid.** Nothing in the pre-flight is ever green — a clean/ready row shows
   **no security badge** (absence of alarm = ok). There is no "green = safe/ready" state, ever.
-- **Per-row badges** (address cell, `columns.tsx`): **FROZEN** → a red `⊘ Frozen (Tether)` badge that
-  **replaces** the "Valid on TRON" line, **always visible (never hover-only)**; the row's Pay is
-  disabled (it joins the same `payDisabled` set as OFAC-sanctioned rows) but it is still **removable**.
-  **EXCHANGE** → a discreet **amber** `⚠ Exchange?` chip *next to* the validation line (does not
-  replace, does not block; hover = the generic S-2-GAP disclaimer). **UNVERIFIED** → a muted
-  `◻ Unverified` chip (advisory, **never green, never blocks**; the on-chain guard re-checks at pay).
-  **checking** → a neutral `Checking…` chip while the read is in flight (D-7 in the UI — never
-  assumed safe). Hover detail is reserved for the **non-blocking** states (frozen severity is always
-  visible on its face).
+- **Per-row badges — the CLOSED row-state model (UX-2).** The address cell shows **exactly one**
+  primary line (`rowLineFor`, `preflightView.ts`) plus an orthogonal amber `Exchange?` chip. The line
+  is one of, in precedence order: **Invalid address** (red, structural) · **Frozen (Tether)** (red
+  `⊘`, `columns.tsx`) · **Paid before** (✓✓, green) · **Verifying…** (neutral spinner, the read is
+  queued/in-flight — **transient only**) · **Unverified** (muted, D-7 — the read failed, **never
+  shown as safe**) · **Valid on TRON** (✓, aqua). The old grey **"Format ok"** resting state is
+  **GONE** — a well-formed row goes straight into **Verifying… → resolved**, never a limbo badge
+  (format validation still rejects malformed addresses at insertion; it just no longer surfaces a
+  resting badge). **FROZEN** **replaces** the line, is **always visible (never hover-only)**, and
+  disables Pay (same `payDisabled` set as OFAC-sanctioned) while the row stays **removable**.
+  **`Exchange?`** is a discreet amber chip *next to* the line (advisory; does not replace, does not
+  block; hover = the generic S-2-GAP disclaimer). Hover detail is reserved for the **non-blocking**
+  states; frozen severity is always on its face. **GREEN = PAID stays intact** — only *Paid before*
+  is green; *Valid on TRON* is aqua (`lineTone` asserts `valid ≠ success` in a test).
 - **Contextual banner** (`PreflightBanner.tsx`, above the table) — renders **only** when the selected
-  batch has ≥1 flagged row (a clean batch shows nothing; zero noise). One line, only the segments with
-  a count: `⊘ N frozen · ⚠ N exchange deposits · ◻ N unverified`. It doubles as the color legend.
+  batch has ≥1 flagged row (a clean batch shows nothing; zero noise). As of UX-2 each flagged category
+  gets its **own one-line strip that EXPLAINS the consequence** (not just a count), shown only when
+  that category has ≥1 row: **frozen** ("… would be an irreversible loss; the funds would not reach
+  the recipient and can't be recovered — remove to continue") · **exchange** ("… if the exchange
+  doesn't credit transfers sent from a contract, the payee may not see the funds — verify before
+  paying") · **unverified** ("… couldn't be checked right now — re-checked on-chain when you pay").
+  It doubles as the color legend. Honest wording — exchange coverage is partial (S-2 GAP).
 - **Accept-and-pay** (`ExchangeConfirmDialog.tsx`) — if the batch contains EXCHANGE rows, the generic
   disclaimer lands **at decide-time**, right before the signature, with an explicit accept. FROZEN
   rows can never reach this step (Pay disabled + the pre-flight halts the batch); the sign path
@@ -141,14 +162,22 @@ owner-CLOSED** (encoded in `src/lib/security/preflightView.ts`, asserted in
   its **last 6 characters** confirmed (a required checkbox) before Save, killing the pasted-corrupted
   (clipboard-malware) vector. Editing only the amount asks nothing.
 
-**Timing & wiring (`usePayout.ts`).** The blacklist read is a rate-limited round-trip, so it runs at
-**pay-initiation** (`preflightThenPay`, GATE -1 below) — never per keystroke/render. Exchange
-classification is pure/instant, so the amber chip + banner exchange count surface **proactively** on
-every roster change. Readings **accumulate per address** (a later single-row pay never erases the
-frozen badges a prior Pay-all surfaced) and clear when the roster's addresses change. The **`--warning`
-amber token** (`globals.css`) exists solely for the exchange advisory — distinct from error-red
-(frozen/sanctioned) and success-green (**reserved for paid**). All of this is **reads only** —
-non-custodial is untouched.
+**Timing & wiring (`usePayout.ts`, UX-1).** The blacklist read is a rate-limited round-trip, so it
+runs **EAGERLY when rows enter the roster** (load / add-payee / CSV import) behind a **throttled,
+cancelable queue** (`runThrottledBlacklist`, `preflightQueue.ts`) — **sequential batches of ≤10,
+one per second** (a safe margin under TronGrid's ~15/s), so a whole roster resolves without tripping
+the limit. Rows awaiting their turn show the neutral **Verifying…** state (never a resolved badge).
+The queue is **cancelable / roster-keyed**: a generation token (`eagerGenRef`) is bumped on every
+address change, so a read in flight for a now-stale roster is **dropped, never applied** — and because
+readings are keyed by **address** (never row id/index), a stale reading can never paint the wrong row.
+Only **new** addresses are queued (a reconcile keeps surviving readings), so adding one payee reads
+one address and never flips the rest back to Verifying…. The **pay-time read is kept** as a cheap
+re-confirm (`preflightThenPay`, GATE -1) covering the seconds-window between resolution and signing —
+it is no longer the *first* check. **D-7 fail-safe** end-to-end: a batch read that throws → every
+address UNVERIFIED, never SAFE. Exchange classification stays pure/instant (amber chip + banner count
+surface on every roster change). Readings **accumulate per address**. The **`--warning` amber token**
+(`globals.css`) exists solely for the exchange advisory — distinct from error-red (frozen/sanctioned)
+and success-green (**reserved for paid**). All of this is **reads only** — non-custodial is untouched.
 
 ## 4. The payout pipeline — the 3-gate choke-point
 
@@ -182,13 +211,14 @@ flowchart TD
 
 Gate specifics (all in `usePayout.ts` → `preflightThenPay` then `executePayout`, plus `canPayAll`):
 
-- **Gate -1 — pre-flight (advisory, reads only; runs FIRST).** `preflightThenPay` reads the
-  frozen-address status of the payer + every recipient (`readBatchBlacklist`) and classifies the
-  batch (`previewBatch`, §3b). A **frozen** row or sender **halts** the flow — nothing is signed, the
-  badges/banner light up, the operator removes the frozen row. An **exchange** row opens the
-  accept-and-pay disclaimer. A clean (or accepted) batch proceeds to Gate 0. Fail-safe (D-7): a
-  catastrophic read failure marks everything UNVERIFIED (never SAFE), which does not block — the
-  on-chain guard is the real gate.
+- **Gate -1 — pre-flight (advisory, reads only; runs FIRST).** As of UX-1 the recipient blacklist is
+  read **eagerly** when rows enter the roster (§3b-i "Timing & wiring"), so the badges/banner light up
+  **before** the operator ever clicks Pay. `preflightThenPay` then re-reads the payer + every recipient
+  (`readBatchBlacklist`) as a cheap seconds-window re-confirm and classifies the batch (`previewBatch`,
+  §3b). A **frozen** row or sender **halts** the flow — nothing is signed, the operator removes the
+  frozen row. An **exchange** row opens the accept-and-pay disclaimer. A clean (or accepted) batch
+  proceeds to Gate 0. Fail-safe (D-7): a catastrophic read failure marks everything UNVERIFIED (never
+  SAFE), which does not block — the on-chain guard is the real gate.
 - **Gate 0 — prove wallet control (runs after the pre-flight).** Before any server state is touched,
   `executePayout` calls `proveWalletControl` (`src/lib/payout/challengeClient.ts`): fetch a
   single-use challenge (`GET /api/payout/challenge`) and sign it with the connected wallet

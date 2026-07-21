@@ -12,7 +12,10 @@ import assert from "node:assert/strict"
 import {
   findAddressOwner,
   findDuplicateAddresses,
+  groupAddressConflicts,
+  resolveConflictPicks,
   splitByAddress,
+  type RowConflictGroup,
 } from "../../src/lib/rosterDedupe.ts"
 
 // Two 34-char strings differing ONLY in the case of one character. TRON base58 is
@@ -140,4 +143,110 @@ test("splitByAddress: case-only difference is kept as two distinct rows", () => 
   const split = splitByAddress(rows, (i) => i + 2)
   assert.deepEqual(split.uniqueIndices, [0, 1])
   assert.equal(split.conflicts.length, 0)
+})
+
+// --- groupAddressConflicts (UX-3: structured conflicts for the in-app resolver) ---
+// Same detection as splitByAddress (both reuse findDuplicateAddresses) — but carries the
+// ACTUAL competing rows + the file row number, so the resolver can show them side by side.
+
+type Row = { name: string; address: string; amount: number }
+const row = (name: string, address: string, amount: number): Row => ({ name, address, amount })
+
+test("groupAddressConflicts: a 2-way conflict carries both rows with their file row numbers", () => {
+  const rows: Row[] = [
+    row("Priya", A, 1000),
+    row("Sam", B, 500),
+    row("Priya2", A, 2000),
+  ]
+  const groups = groupAddressConflicts(rows, (i) => i + 2)
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].address, A)
+  // The competing rows, in first-appearance order, each tagged with its file row (index + 2).
+  assert.deepEqual(groups[0].candidates, [
+    { row: rows[0], rowNumber: 2 },
+    { row: rows[2], rowNumber: 4 },
+  ])
+})
+
+test("groupAddressConflicts: a 3-way conflict is one group of three candidates", () => {
+  const rows: Row[] = [row("A1", A, 1), row("A2", A, 2), row("A3", A, 3)]
+  const groups = groupAddressConflicts(rows, (i) => i + 2)
+  assert.equal(groups.length, 1)
+  assert.equal(groups[0].candidates.length, 3)
+  assert.deepEqual(
+    groups[0].candidates.map((c) => c.rowNumber),
+    [2, 3, 4]
+  )
+})
+
+test("groupAddressConflicts: all-unique → no groups", () => {
+  const rows: Row[] = [row("A", A, 1), row("B", B, 2), row("C", C, 3)]
+  assert.deepEqual(groupAddressConflicts(rows, (i) => i + 2), [])
+})
+
+test("groupAddressConflicts: case-only difference is NOT a conflict", () => {
+  const rows: Row[] = [row("Up", MIXED_UPPER, 1), row("Low", MIXED_LOWER, 2)]
+  assert.deepEqual(groupAddressConflicts(rows, (i) => i + 2), [])
+})
+
+test("groupAddressConflicts: two independent conflicts → two groups", () => {
+  const rows: Row[] = [row("A1", A, 1), row("B1", B, 2), row("A2", A, 3), row("B2", B, 4)]
+  const groups = groupAddressConflicts(rows, (i) => i + 2)
+  assert.equal(groups.length, 2)
+})
+
+// --- resolveConflictPicks (UX-3: RETAIN, never auto-pick) --------------------
+
+const twoWay: RowConflictGroup<Row> = {
+  address: A,
+  candidates: [
+    { row: row("Priya", A, 1000), rowNumber: 4 },
+    { row: row("Priya2", A, 2000), rowNumber: 5 },
+  ],
+}
+
+test("resolveConflictPicks: NO selection → [] (the system never auto-picks a winner)", () => {
+  assert.deepEqual(resolveConflictPicks([twoWay], {}), [])
+})
+
+test("resolveConflictPicks: a numeric pick returns exactly that row", () => {
+  assert.deepEqual(resolveConflictPicks([twoWay], { [A]: 0 }), [twoWay.candidates[0].row])
+  assert.deepEqual(resolveConflictPicks([twoWay], { [A]: 1 }), [twoWay.candidates[1].row])
+})
+
+test("resolveConflictPicks: 'discard' imports none of the group", () => {
+  assert.deepEqual(resolveConflictPicks([twoWay], { [A]: "discard" }), [])
+})
+
+test("resolveConflictPicks: a 3-way, pick the middle → only the middle row", () => {
+  const threeWay: RowConflictGroup<Row> = {
+    address: A,
+    candidates: [
+      { row: row("first", A, 1), rowNumber: 2 },
+      { row: row("middle", A, 2), rowNumber: 3 },
+      { row: row("last", A, 3), rowNumber: 4 },
+    ],
+  }
+  assert.deepEqual(resolveConflictPicks([threeWay], { [A]: 1 }), [threeWay.candidates[1].row])
+})
+
+test("resolveConflictPicks: multiple groups → at most one pick each; an unresolved group adds nothing", () => {
+  const other: RowConflictGroup<Row> = {
+    address: B,
+    candidates: [
+      { row: row("Bo", B, 10), rowNumber: 6 },
+      { row: row("Bo2", B, 20), rowNumber: 7 },
+    ],
+  }
+  // Group A resolved to candidate 1; group B left unresolved → only A's pick.
+  assert.deepEqual(resolveConflictPicks([twoWay, other], { [A]: 1 }), [twoWay.candidates[1].row])
+  // Both resolved → one pick each, in group order.
+  assert.deepEqual(resolveConflictPicks([twoWay, other], { [A]: 0, [B]: 0 }), [
+    twoWay.candidates[0].row,
+    other.candidates[0].row,
+  ])
+})
+
+test("resolveConflictPicks: an out-of-range index is ignored (never fabricates a row)", () => {
+  assert.deepEqual(resolveConflictPicks([twoWay], { [A]: 9 }), [])
 })

@@ -76,6 +76,74 @@ export function hasBlockingRow(rows: ReadonlyArray<{ frozen?: boolean }>): boole
   return rows.some((r) => Boolean(r.frozen))
 }
 
+// ── The single primary line (Sprint UX-2) ──────────────────────────────────────────────────────
+// The address cell shows EXACTLY ONE primary line (plus an orthogonal amber Exchange? chip). This
+// merges the wallet double-check (paid-before / invalid, from validation.ts) with the eager frozen
+// pre-flight (frozen / verifying / unverified) into one precedence-resolved descriptor. The grey
+// "Format ok" resting state is GONE: a well-formed row is either Verifying… (read queued/in-flight)
+// or one of the resolved states — never a limbo badge.
+
+/** The mutually-exclusive primary line for the address cell. NOTE: there is deliberately NO
+ *  "format-ok"/"valid-format" member — a well-formed row resolves to `valid` (or is `verifying`
+ *  until its read lands), it never sits in a grey limbo. */
+export type RowLine =
+  | "invalid" // structurally invalid (isAddress false) — red, blocks
+  | "frozen" // Tether-blacklisted destination — red, ALWAYS visible, blocks
+  | "verifying" // eager blacklist read queued/in-flight — neutral, TRANSIENT, never assumed safe
+  | "unverified" // blacklist read failed/absent (D-7) — muted, never green, never blocks
+  | "paid-before" // ✓✓ the connected wallet paid this address before — success (green)
+  | "valid" // ✓ passed the on-chain pre-flight, clean — primary (aqua), NOT green
+
+/** The visual tone a primary line carries. `success` (green) is reserved for `paid-before` — the
+ *  GREEN = PAID invariant. `valid` ("clean") is `primary` (aqua), NEVER success. */
+export type LineTone = "success" | "primary" | "danger" | "muted"
+
+/**
+ * Resolve the single primary line for a row from its combined signals.
+ *
+ * Precedence (safety-first): invalid > frozen > paid-before > verifying > unverified > valid.
+ *   • Danger (invalid/frozen) always wins — a frozen row is never masked by a positive signal.
+ *   • `paid-before` keeps its precedence over the TRANSIENT `verifying` (a known ✓✓ is not downgraded
+ *     to "Verifying…" during an eager re-read); frozen still overrides it (a since-frozen address
+ *     that you paid before must show frozen).
+ *   • `verifying` (in-flight) outranks `unverified` (a prior miss) — the fresh read beats the stale.
+ *   • `valid` (clean) is the lowest — the resting positive state, only after a SAFE read.
+ */
+export function rowLineFor(input: {
+  invalid?: boolean
+  paidBefore?: boolean
+  frozen?: boolean
+  verifying?: boolean
+  unverified?: boolean
+}): RowLine {
+  if (input.invalid) return "invalid"
+  if (input.frozen) return "frozen"
+  if (input.paidBefore) return "paid-before"
+  if (input.verifying) return "verifying"
+  if (input.unverified) return "unverified"
+  return "valid"
+}
+
+/**
+ * The tone for a primary line. `paid-before` is the ONLY line that maps to `success` (green) — the
+ * machine-checked GREEN = PAID guardrail. A pre-flight-clean `valid` row is `primary` (aqua), never
+ * green; the transient/advisory states are `muted`; danger is `danger`.
+ */
+export function lineTone(line: RowLine): LineTone {
+  switch (line) {
+    case "paid-before":
+      return "success" // the ONLY green — green = paid
+    case "valid":
+      return "primary" // aqua; NOT green
+    case "invalid":
+    case "frozen":
+      return "danger"
+    case "verifying":
+    case "unverified":
+      return "muted"
+  }
+}
+
 export type PreflightSummary = {
   frozen: number
   exchange: number

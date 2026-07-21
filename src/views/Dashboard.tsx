@@ -13,6 +13,7 @@ import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
 import { PreflightBanner } from "@/components/dashboard/PreflightBanner"
+import { ResolveConflictsDialog } from "@/components/dashboard/ResolveConflictsDialog"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
 import { usePayout } from "@/hooks/usePayout"
 import { payoutTitle } from "@/lib/format"
@@ -148,7 +149,7 @@ export function Dashboard() {
               rowExchange={payout.rowExchange}
               rowFrozen={payout.rowFrozen}
               rowUnverified={payout.rowUnverified}
-              preflightChecking={payout.preflightChecking}
+              rowChecking={payout.rowChecking}
               rowTxState={payout.rowTxState}
               txidByPayee={payout.txidByPayee}
               payRow={payout.payRow}
@@ -206,6 +207,15 @@ export function Dashboard() {
         confirm={payout.exchangeConfirm}
         onConfirm={payout.confirmExchangeAndPay}
         onCancel={payout.cancelExchangeConfirm}
+      />
+      {/* In-app duplicate-address resolver (UX-3). Opened when a CSV import shares an address
+          across rows — the uniques are already imported; the operator picks which row to keep.
+          Rooted here (not inside the import dialog) so it outlives the EmptyRoster→PayoutControls
+          swap that importing the uniques triggers. */}
+      <ResolveConflictsDialog
+        groups={payout.importConflicts}
+        onResolve={payout.resolveImportConflicts}
+        onCancel={payout.cancelImportConflicts}
       />
     </div>
   )

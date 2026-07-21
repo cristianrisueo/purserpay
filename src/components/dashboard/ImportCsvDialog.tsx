@@ -19,12 +19,16 @@ import {
   type RawCsvTable,
 } from "@/lib/csvImport"
 import type { PayeeInput } from "@/lib/payeeValidation"
+import type { RowConflictGroup } from "@/lib/rosterDedupe"
 
 import { CsvColumnMapper } from "./CsvColumnMapper"
 
 type ImportCsvDialogProps = {
   rosterCount: number
-  onImport: (rows: PayeeInput[]) => Promise<void>
+  onImport: (
+    rows: PayeeInput[],
+    conflictGroups?: RowConflictGroup<PayeeInput>[]
+  ) => Promise<void>
 }
 
 type Stage = "pick" | "map"
@@ -89,11 +93,17 @@ export function ImportCsvDialog({ rosterCount, onImport }: ImportCsvDialogProps)
   }, [table, mapping, missingFields, collision])
 
   async function handleConfirm() {
-    // Never clear-then-import-nothing: if every row was held back as a duplicate
-    // there are no uniques to write, so there's nothing to confirm.
-    if (!mappingResult?.ok || mappingResult.rows.length === 0) return
+    // Bail only with nothing to do — no uniques to write AND no conflicts to resolve.
+    // (Previously we bailed on `rows.length === 0` alone; now an all-conflict file still
+    // proceeds, because the user can resolve those in the resolver — UX-3.)
+    if (
+      !mappingResult?.ok ||
+      (mappingResult.rows.length === 0 && mappingResult.conflictGroups.length === 0)
+    )
+      return
     setImporting(true)
-    await onImport(mappingResult.rows)
+    // Uniques land immediately; conflictGroups (if any) open the Dashboard-root resolver.
+    await onImport(mappingResult.rows, mappingResult.conflictGroups)
     setImporting(false)
     handleOpenChange(false)
   }
@@ -199,7 +209,8 @@ export function ImportCsvDialog({ rosterCount, onImport }: ImportCsvDialogProps)
               variant={isDestructive ? "destructive" : "default"}
               disabled={
                 !mappingResult?.ok ||
-                mappingResult.rows.length === 0 ||
+                (mappingResult.rows.length === 0 &&
+                  mappingResult.conflictGroups.length === 0) ||
                 importing
               }
               onClick={handleConfirm}

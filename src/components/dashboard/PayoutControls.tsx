@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { formatUsdt } from "@/lib/format"
 import type { PayeeInput } from "@/lib/payeeValidation"
+import type { RowConflictGroup } from "@/lib/rosterDedupe"
 import type { BatchPhase } from "@/hooks/usePayout"
 import type { PurserError } from "@/lib/tron/errors"
 
@@ -28,7 +29,10 @@ type PayoutControlsProps = {
   payError: PurserError | null
   rosterCount: number
   onAddPayee: (input: PayeeInput) => Promise<void>
-  onImportRoster: (rows: PayeeInput[]) => Promise<void>
+  onImportRoster: (
+    rows: PayeeInput[],
+    conflictGroups?: RowConflictGroup<PayeeInput>[]
+  ) => Promise<void>
   onPayAll: () => void
   onReset: () => void
   /** Opens the SubscribeDialog (runSubscribe, 150 USDT). */

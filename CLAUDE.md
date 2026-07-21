@@ -402,27 +402,44 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   (sender-frozen first, then per-row destination-frozen), so preview and execution never disagree.
   Reads only — non-custodial untouched. (Logic in `src/lib/security/*`; the S-3 dashboard renders it.)
 - **S-3 visual doctrine (owner-CLOSED — the dashboard rendering of the pre-flight).** **GREEN = PAID,
-  and ONLY paid** — a clean/ready row shows **no** security badge (absence of alarm = ok); there is
-  never a "green = safe/ready". **Frozen severity is ALWAYS visible, never hover-only** (a red badge
-  that replaces the validation line + a disabled Pay; the row stays removable). **Hover is only for
-  what does NOT block** (the amber `--warning` **exchange** advisory, the muted **unverified** state).
-  The blacklist read runs at **pay-initiation** (`preflightThenPay`, a GATE -1 before the wallet-proof
-  gate) — never per keystroke — while exchange detection is pure/always-live; readings **accumulate
-  per address**, cleared on any roster change. A batch with a **frozen** row can **never** be
-  signed (`hasBlockingRow`); the exchange disclaimer lands at **decide-time** (accept-and-pay), not in
-  a tooltip. Add/edit requires confirming a **new/changed** address's **last 6 chars** (anti
-  clipboard-malware). Pure decision logic in `src/lib/security/preflightView.ts` (node-tested); UI in
-  `columns.tsx` · `PreflightBanner.tsx` · `ExchangeConfirmDialog.tsx` · `PayeeFormDialog.tsx`. Still
-  reads only — non-custodial untouched.
+  and ONLY paid** — a clean/ready row's line reads **"Valid on TRON"** (aqua ✓), never green; only
+  **"Paid before"** (✓✓) is green (`lineTone` asserts `valid ≠ success` in a test). The address cell
+  shows a **CLOSED set** of **exactly one** primary line (`rowLineFor`): **Invalid** · **Frozen
+  (Tether)** · **Paid before** · **Verifying…** · **Unverified** · **Valid on TRON** — plus an
+  orthogonal amber **Exchange?** chip. The old grey **"Format ok" resting state is REMOVED**: a
+  well-formed row goes straight into **Verifying… → resolved** (format validation still rejects
+  malformed addresses at insertion; it just no longer surfaces a resting badge). **Frozen severity is
+  ALWAYS visible, never hover-only** (a red badge that replaces the line + a disabled Pay; the row
+  stays removable). **Hover is only for what does NOT block** (the amber `--warning` **exchange**
+  advisory, the muted **unverified** state). **The blacklist read runs EAGERLY on roster load / add /
+  import (UX-1)** behind a **throttled, cancelable queue** (`preflightQueue.ts` — **sequential batches
+  of ≤10, one per second**, under TronGrid's ~15/s; roster-keyed cancellation drops stale reads, which
+  are keyed by **address** so they can never paint the wrong row), with the **pay-time** read kept as a
+  cheap seconds-window re-confirm (`preflightThenPay`, GATE -1). Exchange detection is pure/always-live;
+  readings **accumulate per address**, reconciled (survivors kept) on roster change. A batch with a
+  **frozen** row can **never** be signed (`hasBlockingRow`); the exchange disclaimer lands at
+  **decide-time** (accept-and-pay), not in a tooltip. The **"before you pay" banner** shows a
+  per-category strip that **explains the consequence** (frozen = irreversible loss; exchange = may not
+  credit), only when that category has ≥1 row. Add/edit requires confirming a **new/changed** address's
+  **last 6 chars** (anti clipboard-malware). Pure decision logic in `src/lib/security/preflightView.ts`
+  + `preflightQueue.ts` (node-tested); UI in `columns.tsx` · `VerifyBadge.tsx` · `PreflightBanner.tsx`
+  · `ExchangeConfirmDialog.tsx` · `PayeeFormDialog.tsx`. Still reads only — non-custodial untouched.
 - The roster **guarantees unique addresses**, enforced at **insertion** (`src/lib/rosterDedupe.ts`,
   the single source of truth) — since the atomic batch is built straight from the roster, the same
   wallet twice would be a **silent double-payment**. "Duplicate" = the same base58 string, matched
   **case-sensitively** (case-only difference = a *different* wallet). The rule is **RETAIN, never
   DISCARD**: manual add/edit **rejects** a colliding address with a named error before persisting
   (an edit keeping its *own* address is allowed); CSV import **imports the uniques and holds back
-  every row of a shared-address group** (never auto-picks a winner), surfacing each by file row
-  number to resolve and re-add. Dedupe is **within the incoming file** (a full overwrite replaces
-  the prior roster anyway). This is insertion-time validation only — it does **not** touch the
+  every row of a shared-address group** (never auto-picks a winner). Since **UX-3** the operator
+  resolves those conflicts **in-app**: the uniques land immediately and a **Dashboard-root
+  `ResolveConflictsDialog`** shows the competing rows side by side so the user **picks which one to
+  keep, or discards the group** — **user-driven, NEVER auto-picked** (`resolveConflictPicks` returns
+  a row only for an explicit numeric choice; empty/discard → nothing). **Dismissing** the resolver is
+  the S-0 fallback (uniques imported, conflicts left unimported). The resolver is rooted at the
+  Dashboard (not inside the import dialog) because importing the uniques unmounts the `EmptyRoster`
+  that hosts it, so it is driven by `usePayout` state (`importConflicts` / `resolveImportConflicts` /
+  `cancelImportConflicts`). Dedupe is **within the incoming file** (a full overwrite replaces the
+  prior roster anyway). This is insertion-time validation only — it does **not** touch the
   non-custodial money path.
 
 ---

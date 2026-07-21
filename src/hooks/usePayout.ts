@@ -11,6 +11,7 @@ import { type BlacklistStatus } from "@/lib/security/blacklist"
 import { classifyAddress } from "@/lib/security/exchangeDetect"
 import { previewBatch } from "@/lib/security/previewBatch"
 import { hasBlockingRow, summarizePreflight } from "@/lib/security/preflightView"
+import { runThrottledBlacklist } from "@/lib/security/preflightQueue"
 import { authorizePayout, releasePayout } from "@/lib/freeTier/authorizeClient"
 import { FREE_TIER_COOLDOWN_MS } from "@/lib/freeTier/gate"
 import { proveWalletControl } from "@/lib/payout/challengeClient"
@@ -21,6 +22,7 @@ import {
 } from "@/lib/referral/claimClient"
 import { db } from "@/lib/db"
 import type { PayeeInput } from "@/lib/payeeValidation"
+import type { RowConflictGroup } from "@/lib/rosterDedupe"
 import {
   addPayee as addPayeeToDb,
   removePayee as removePayeeFromDb,
@@ -457,19 +459,28 @@ export function usePayout() {
   const paying = batchPhase.kind !== "idle"
 
   // --- Frozen-address pre-flight (S-3, ADVISORY; the on-chain guard is the guarantee) -----
-  // The blacklist read is a rate-limited TronGrid round-trip, so it runs at PAY-INITIATION
-  // (not per render). We ACCUMULATE what we've learned per ADDRESS across reads (so paying one
-  // clean row never erases the frozen badges a prior Pay-all surfaced) and clear the whole map
+  // The blacklist read is a rate-limited TronGrid round-trip. As of UX-1 it runs EAGERLY when rows
+  // enter the roster (load / add / import) behind a throttled, cancelable queue (below), AND again
+  // as a cheap re-confirm at pay time. We ACCUMULATE what we've learned per ADDRESS across reads (so
+  // paying one clean row never erases the frozen badges a prior read surfaced) and reconcile the map
   // when the roster's addresses change (a removed/edited frozen row can't keep a stale red badge).
-  // `preflightChecking` is the in-flight neutral "checking" state (D-7 — a row is never assumed
-  // safe while a read is pending).
+  // `checkingAddrs` holds the addresses whose read is queued/in-flight — the neutral "Verifying…"
+  // state (D-7 — a row is never assumed safe while a read is pending).
   const [blacklistByAddress, setBlacklistByAddress] = useState<
     Map<string, BlacklistStatus>
   >(new Map())
-  const [preflightChecking, setPreflightChecking] = useState(false)
+  const [checkingAddrs, setCheckingAddrs] = useState<Set<string>>(new Set())
   // The exchange accept-and-pay gate: the rows to disclaim, non-null while the dialog is open.
   const [exchangeConfirm, setExchangeConfirm] = useState<
     { rows: { address: string; exchange?: string }[] } | null
+  >(null)
+  // CSV-import duplicate resolution (UX-3). When an import produces shared-address
+  // conflicts, the uniques are written immediately and the structured groups land here
+  // to drive the Dashboard-root ResolveConflictsDialog. It lives at the hook (not inside
+  // ImportCsvDialog) because importing the uniques flips `isEmpty` and unmounts the
+  // EmptyRoster that hosts the import dialog — the resolver must outlive that.
+  const [importConflicts, setImportConflicts] = useState<
+    RowConflictGroup<PayeeInput>[] | null
   >(null)
   // The pending batch awaiting the exchange confirmation's "Continue".
   const pendingPayRef = useRef<Payee[] | null>(null)
@@ -489,11 +500,77 @@ export function usePayout() {
     return { rowFrozen: frozen, rowUnverified: unverified }
   }, [roster, blacklistByAddress])
 
-  // A roster address change invalidates every frozen/unverified reading.
+  // Row ids currently mid-verification: the address is queued/in-flight AND has no resolved reading
+  // yet. Gating on "no reading yet" means a pay-time re-confirm never flips an already-resolved row
+  // back to "Verifying…" — only genuinely-unknown rows show the transient state.
+  const rowChecking = useMemo(() => {
+    const s = new Set<string>()
+    for (const p of roster) {
+      if (checkingAddrs.has(p.address) && !blacklistByAddress.has(p.address)) {
+        s.add(p.id)
+      }
+    }
+    return s
+  }, [roster, checkingAddrs, blacklistByAddress])
+
+  // --- Eager, throttled, cancelable pre-flight queue (Sprint UX-1) --------------------------------
+  // A ref mirror of the accumulated readings, so the reconcile effect can read them WITHOUT taking a
+  // dependency on `blacklistByAddress` (which would re-fire the effect on every batch that lands).
+  const blacklistRef = useRef(blacklistByAddress)
   useEffect(() => {
-    setBlacklistByAddress(new Map())
+    blacklistRef.current = blacklistByAddress
+  }, [blacklistByAddress])
+
+  // Generation token: bumped on every roster address change so a queue in flight for a now-stale
+  // roster is cancelled — its results are dropped, never applied (a stale read can never paint a
+  // badge on the wrong row; readings are keyed by ADDRESS). This extends S-3's clear-on-change rule
+  // to the queued case.
+  const eagerGenRef = useRef(0)
+  useEffect(() => {
+    const uniqueAddrs = [...new Set(roster.map((p) => p.address))]
+    const present = new Set(uniqueAddrs)
+
+    // Reconcile: KEEP readings for addresses still in the roster, drop the rest (a removed/edited
+    // row can't keep a stale badge). Merge, don't wipe — surviving badges stay stable, so adding one
+    // payee never flips the rest back to "Verifying…".
+    setBlacklistByAddress((prev) => {
+      let changed = false
+      const next = new Map<string, BlacklistStatus>()
+      for (const [addr, st] of prev) {
+        if (present.has(addr)) next.set(addr, st)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+    // Freshly re-set per batch inside preflightThenPay; clear defensively on any roster change.
     rowFrozenRef.current = new Set()
-  }, [addressesKey])
+
+    // Cancel any prior run, then queue ONLY the addresses without a reading yet (adding one payee
+    // reads one address; a fresh import reads them all). `blacklistRef` reflects the pre-reconcile
+    // readings — surviving addresses are still in it, so they are skipped.
+    const gen = ++eagerGenRef.current
+    const need = uniqueAddrs.filter((a) => !blacklistRef.current.has(a))
+    if (need.length === 0) {
+      setCheckingAddrs(new Set())
+      return
+    }
+    setCheckingAddrs(new Set(need)) // these rows show "Verifying…" until their read lands
+
+    void runThrottledBlacklist(need, readBatchBlacklist, {
+      isCancelled: () => eagerGenRef.current !== gen,
+      onBatch: (entries) => {
+        if (eagerGenRef.current !== gen) return // roster changed — discard these results
+        setBlacklistByAddress((prev) => new Map([...prev, ...entries]))
+        setCheckingAddrs((prev) => {
+          const next = new Set(prev)
+          for (const [addr] of entries) next.delete(addr)
+          return next
+        })
+      },
+    }).finally(() => {
+      if (eagerGenRef.current === gen) setCheckingAddrs(new Set())
+    })
+  }, [addressesKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The contextual banner's summary over the SELECTED batch. Exchange is pure/always-live; frozen
   // and unverified are known only after a pay-time read (0 until then). Each flagged row lands in
@@ -821,7 +898,9 @@ export function usePayout() {
       setPayError(null)
       setCooldownUntil(null)
 
-      setPreflightChecking(true)
+      // A cheap re-confirm at pay time (D-3 seconds-window) — the eager queue already resolved
+      // these rows, so this re-reads payer + recipients and merges. Already-resolved rows keep
+      // their badge (rowChecking gates on "no reading yet"), so they don't flicker to "Verifying…".
       let statusByAddress: Map<string, BlacklistStatus>
       try {
         const entries = await readBatchBlacklist([
@@ -833,8 +912,6 @@ export function usePayout() {
         // D-7 in the UI: a catastrophic read failure leaves nothing SAFE — an empty map means
         // previewBatch marks every address UNVERIFIED (never green).
         statusByAddress = new Map()
-      } finally {
-        setPreflightChecking(false)
       }
 
       const preview = previewBatch({
@@ -1092,9 +1169,30 @@ export function usePayout() {
     [forgetRow]
   )
 
-  const importRoster = useCallback(async (rows: PayeeInput[]) => {
-    await replaceRoster(rows)
+  const importRoster = useCallback(
+    async (
+      rows: PayeeInput[],
+      conflictGroups: RowConflictGroup<PayeeInput>[] = []
+    ) => {
+      // The uniques land immediately (unchanged path). Any shared-address conflicts open
+      // the in-app resolver; the clean rows are never blocked or delayed by it.
+      await replaceRoster(rows)
+      setImportConflicts(conflictGroups.length > 0 ? conflictGroups : null)
+    },
+    []
+  )
+
+  // The user picked which row to keep for each resolved conflict (or discarded the group).
+  // Append the kept rows — each pick's address is, by construction, absent from the uniques
+  // and from every other group, so addPayee's uniqueness guard always passes. RETAIN, never
+  // auto-pick: `picks` only ever contains rows the user explicitly chose (see resolveConflictPicks).
+  const resolveImportConflicts = useCallback(async (picks: PayeeInput[]) => {
+    for (const pick of picks) await addPayeeToDb(pick)
+    setImportConflicts(null)
   }, [])
+
+  // Dismissed the resolver → S-0 fallback: uniques already imported, conflicts left unimported.
+  const cancelImportConflicts = useCallback(() => setImportConflicts(null), [])
 
   return {
     roster,
@@ -1118,7 +1216,7 @@ export function usePayout() {
     rowExchange,
     rowFrozen,
     rowUnverified,
-    preflightChecking,
+    rowChecking,
     preflightSummary,
     exchangeConfirm,
     confirmExchangeAndPay,
@@ -1179,6 +1277,10 @@ export function usePayout() {
     updatePayee,
     removePayee,
     importRoster,
+    // CSV-import duplicate resolution (UX-3)
+    importConflicts,
+    resolveImportConflicts,
+    cancelImportConflicts,
   }
 }
 

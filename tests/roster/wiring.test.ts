@@ -18,6 +18,11 @@ const ROSTER = read("../../src/lib/roster.ts")
 const CSV_IMPORT = read("../../src/lib/csvImport.ts")
 const FORM_DIALOG = read("../../src/components/dashboard/PayeeFormDialog.tsx")
 const IMPORT_DIALOG = read("../../src/components/dashboard/ImportCsvDialog.tsx")
+const DASHBOARD = read("../../src/views/Dashboard.tsx")
+const USE_PAYOUT = read("../../src/hooks/usePayout.ts")
+const RESOLVE_DIALOG = read(
+  "../../src/components/dashboard/ResolveConflictsDialog.tsx"
+)
 
 // --- Manual add/edit: roster.ts guards both paths ----------------------------
 
@@ -53,4 +58,30 @@ test("PayeeFormDialog surfaces a persist-time rejection (duplicate) via submitEr
 
 test("ImportCsvDialog never clear-then-imports-nothing (guards on rows.length === 0)", () => {
   assert.match(IMPORT_DIALOG, /mappingResult\.rows\.length === 0/)
+})
+
+// --- UX-3: the in-app duplicate resolver is wired end-to-end -----------------
+
+test("applyMapping also returns the STRUCTURED conflicts for the resolver", () => {
+  assert.match(CSV_IMPORT, /groupAddressConflicts\(/)
+  assert.match(CSV_IMPORT, /conflictGroups/)
+})
+
+test("ImportCsvDialog forwards the structured conflictGroups to onImport", () => {
+  assert.match(IMPORT_DIALOG, /mappingResult\.conflictGroups/)
+})
+
+test("ResolveConflictsDialog resolves via the never-auto-pick helper", () => {
+  assert.match(RESOLVE_DIALOG, /resolveConflictPicks\(/)
+})
+
+test("usePayout owns the resolve state and appends the kept rows", () => {
+  assert.match(USE_PAYOUT, /resolveImportConflicts/)
+  assert.match(USE_PAYOUT, /cancelImportConflicts/)
+  assert.match(USE_PAYOUT, /setImportConflicts/)
+})
+
+test("Dashboard mounts the resolver at root (survives the EmptyRoster→PayoutControls swap)", () => {
+  assert.match(DASHBOARD, /ResolveConflictsDialog/)
+  assert.match(DASHBOARD, /groups=\{payout\.importConflicts\}/)
 })
