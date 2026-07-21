@@ -14,11 +14,7 @@ import {
   type RawCsvTable,
 } from "@/lib/csvImport"
 
-// Radix Select can't hold an empty-string item value, so "no role column" is
-// represented by this sentinel here at the JSX boundary only — it's
-// translated back to `undefined` before it ever reaches ColumnMapping.
-const NO_ROLE = "__none__"
-const MAPPING_FIELDS: FieldKey[] = ["name", "address", "amount", "role"]
+const MAPPING_FIELDS: FieldKey[] = ["name", "address", "amount"]
 const PREVIEW_ROW_COUNT = 5
 
 type CsvColumnMapperProps = {
@@ -43,12 +39,6 @@ export function CsvColumnMapper({
   const isDestructive = rosterCount > 0
 
   function setField(field: FieldKey, header: string) {
-    if (field === "role" && header === NO_ROLE) {
-      const next = { ...mapping }
-      delete next.role
-      onMappingChange(next)
-      return
-    }
     onMappingChange({ ...mapping, [field]: header })
   }
 
@@ -89,21 +79,16 @@ export function CsvColumnMapper({
           >
             <label className="text-[13px] font-medium text-foreground sm:w-[104px] sm:shrink-0">
               {FIELD_LABELS[field]}
-              {field !== "role" && (
-                <span className="text-muted-foreground"> *</span>
-              )}
+              <span className="text-muted-foreground"> *</span>
             </label>
             <Select
-              value={field === "role" ? (mapping.role ?? NO_ROLE) : mapping[field]}
+              value={mapping[field]}
               onValueChange={(value) => setField(field, value)}
             >
               <SelectTrigger className="w-full sm:flex-1" size="sm">
                 <SelectValue placeholder="Choose a column" />
               </SelectTrigger>
               <SelectContent>
-                {field === "role" && (
-                  <SelectItem value={NO_ROLE}>No role column</SelectItem>
-                )}
                 {table.headers.map((header) => (
                   <SelectItem key={header} value={header}>
                     {header}
@@ -120,7 +105,6 @@ export function CsvColumnMapper({
           <thead>
             <tr className="border-b border-border bg-muted/40 text-left text-muted-foreground">
               <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Role</th>
               <th className="px-3 py-2 font-medium">Address</th>
               <th className="px-3 py-2 text-right font-medium">USDT amount</th>
             </tr>
@@ -130,9 +114,6 @@ export function CsvColumnMapper({
               <tr key={i} className="border-b border-border last:border-0">
                 <td className="px-3 py-2 text-foreground">
                   {previewCell("name", row)}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">
-                  {previewCell("role", row)}
                 </td>
                 <td className="px-3 py-2 text-muted-foreground">
                   {previewCell("address", row)}

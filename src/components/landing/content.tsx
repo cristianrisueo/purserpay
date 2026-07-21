@@ -4,19 +4,73 @@
 
 export type Recipient = {
   name: string
-  role: string
+  /** Display-ready truncated address (marketing mock — never a real wallet). */
   wallet: string
   amount: string
+  /** Mockup pre-flight line — mirrors the real dashboard's closed row-state model
+   *  (src/lib/security/preflightView.ts): `paid-before` = ✓✓ green · `valid` = ✓ aqua ·
+   *  `frozen` = red block that REPLACES the line and disables Pay. */
+  line: "paid-before" | "valid" | "frozen"
+  /** Orthogonal amber "Exchange?" advisory — the "Valid on TRON" line still shows
+   *  alongside it. Never set on a frozen row. */
+  exchange?: boolean
 }
 
-export const demoTotal = "$7,440"
+// The batch total shown in the hero card footer = the SELECTED rows only
+// (400 + 600 + 300). The frozen row (Aaron, 100) is unchecked, so it is excluded — see below.
+export const demoTotal = "1,300"
 
+// The hero's payout card is a FAITHFUL, STATIC replica of the real dashboard pre-flight
+// (HERO-1): the exact security states the app produces — a paid-before row (✓✓ green), clean
+// "Valid on TRON" rows (✓ aqua), one exchange advisory (amber), and one Tether-frozen row (red)
+// that blocks its own Pay. Four rows cover the full caustic; the frozen row is rendered
+// UNCHECKED (as an operator would leave a blocked row) so "Pay all" is legitimately active over
+// the three clean rows — mirroring the live app, where blockedCount/selectedSum/the pre-flight
+// summary are all computed over SELECTED rows (usePayout.ts). demoTotal is that selected sum
+// (1,300); the unchecked frozen 100 is not counted. Names only — no role (ROLE-1). ReceiptPreview
+// (Module 03) reads the first three of these for its finalized-receipt visual (name/wallet/amount).
 export const demoRecipients: Recipient[] = [
-  { name: "Luna", role: "Lead", wallet: "TR7NHq…9kX2", amount: "$2,940" },
-  { name: "Dayshift team", role: "Support", wallet: "TJmWv3…4pQ8", amount: "$1,600" },
-  { name: "Nightshift", role: "Support", wallet: "TWd1Kp…7bL5", amount: "$1,450" },
-  { name: "Marco", role: "Editor", wallet: "TQ5rYz…2nH9", amount: "$800" },
-  { name: "Priya", role: "Ops", wallet: "TP8xLm…6cR3", amount: "$650" },
+  { name: "Marcus Bell", wallet: "TXRq2A…tVPBi", amount: "400", line: "paid-before" },
+  { name: "Devin Cole", wallet: "TKtoPD…7LJMY", amount: "600", line: "valid" },
+  { name: "Rachel Nguyen", wallet: "TNXoiA…Xc32G", amount: "300", line: "valid", exchange: true },
+  { name: "Aaron Wells", wallet: "TGwoyc…pDZRg", amount: "100", line: "frozen" },
+]
+
+// --- Hero benefits checklist (#why, left column) ----------------------------
+
+export type HeroBenefit = {
+  /** Bold lead line, rendered beside the aqua ✓✓ mark. */
+  title: string
+  /** The supporting sentence beneath the title. */
+  body: string
+}
+
+// The five benefits shown as an aqua ✓✓ checklist in the hero (HERO-1 revision). FIDELITY RULE
+// (owner-enforced): every claim maps to a feature the app SHIPS today — the pre-flight address
+// checks (S-1/S-3), the device-local Dexie roster + one-button wipe, the self-declared PII taken
+// at pay time, the affiliate receipt portal (view/PDF/on-chain verify) plus the dashboard record,
+// and the flat on-chain subscription with no volume cut. Copy is owner-approved, verbatim.
+export const heroBenefits: HeroBenefit[] = [
+  {
+    title: "Your payouts are safe by default.",
+    body: "Before you sign, we check every address for Tether-frozen wallets, duplicate entries, exchange-deposit addresses, and invalid formats.",
+  },
+  {
+    title: "Everything stays in your browser.",
+    body: "Your roster and payment history live in a local database on your device. No data leaves your machine, and one button wipes it all.",
+  },
+  {
+    title: "Anonymous by design — minimal KYC, completed in under a minute.",
+    body: "Just name, country, and tax ID at pay time.",
+  },
+  {
+    title: "Your payees get their own receipts.",
+    body: "Each recipient opens an anonymous link to view, download (PDF), and on-chain-verify every payment you sent them — and you get a full record of every payout in your dashboard.",
+  },
+  {
+    title: "One flat subscription — never a cut of your volume.",
+    body: "Monthly or yearly, one price. We never take a percentage of what you send.",
+  },
 ]
 
 // --- Bloques 1–4: the workflow modules (#how) -------------------------------

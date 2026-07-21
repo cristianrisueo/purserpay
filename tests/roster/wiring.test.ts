@@ -23,6 +23,7 @@ const USE_PAYOUT = read("../../src/hooks/usePayout.ts")
 const RESOLVE_DIALOG = read(
   "../../src/components/dashboard/ResolveConflictsDialog.tsx"
 )
+const DB = read("../../src/lib/db.ts")
 
 // --- Manual add/edit: roster.ts guards both paths ----------------------------
 
@@ -84,4 +85,13 @@ test("usePayout owns the resolve state and appends the kept rows", () => {
 test("Dashboard mounts the resolver at root (survives the EmptyRoster→PayoutControls swap)", () => {
   assert.match(DASHBOARD, /ResolveConflictsDialog/)
   assert.match(DASHBOARD, /groups=\{payout\.importConflicts\}/)
+})
+
+// --- ROLE-1: the retired `role` field is dropped losslessly on Dexie upgrade --------
+
+test("db.ts bumps to v3 and strips the retired role field on upgrade (preserves data)", () => {
+  assert.match(DB, /version\(3\)/)
+  assert.match(DB, /\.upgrade\(/)
+  // The upgrade delegates to the pure, node-tested transform (migration.test.ts).
+  assert.match(DB, /dropRoleField/)
 })

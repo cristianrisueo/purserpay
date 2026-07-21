@@ -12,6 +12,7 @@ import { FreeTierBanner } from "@/components/dashboard/FreeTierBanner"
 import { OfacBlockedDialog } from "@/components/dashboard/OfacBlockedDialog"
 import { PayoutControls } from "@/components/dashboard/PayoutControls"
 import { PayoutTable } from "@/components/dashboard/PayoutTable"
+import { PortalLinkButton } from "@/components/dashboard/PortalLinkButton"
 import { PreflightBanner } from "@/components/dashboard/PreflightBanner"
 import { ResolveConflictsDialog } from "@/components/dashboard/ResolveConflictsDialog"
 import { SubscribeDialog } from "@/components/dashboard/SubscribeDialog"
@@ -158,11 +159,14 @@ export function Dashboard() {
               removePayee={payout.removePayee}
             />
 
-            {/* Device-local data controls. Download report (a PDF of every payout
-                so far — shown only when there's a payout to report; survives a Reset,
-                which only advances the green cycle) sits beside Delete data (a full
-                wipe of the local Dexie DB, behind a confirm). Both act on device-local
-                data only — the on-chain subscription and settled payouts are untouched. */}
+            {/* Device-local data controls. The payee receipt-portal link (the fixed
+                /portal URL an operator shares so payees retrieve their OWN receipts —
+                see docs/09) and Download report (a PDF of every payout so far — shown
+                only when there's a payout to report; survives a Reset, which only
+                advances the green cycle) sit beside Delete data (a full wipe of the
+                local Dexie DB, behind a confirm). Download report and Delete data act on
+                device-local data only; the portal link is a public, read-only URL — the
+                on-chain subscription and settled payouts are untouched by all three. */}
             <div className="mt-5 flex flex-col gap-3 rounded-[14px] border border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-[13px] text-muted-foreground">
                 {payout.hasPayments
@@ -170,6 +174,7 @@ export function Dashboard() {
                   : "Your roster and payment history are stored only on this device."}
               </p>
               <div className="flex flex-wrap items-center gap-2.5">
+                <PortalLinkButton />
                 {payout.hasPayments ? (
                   <Button
                     variant="outline"

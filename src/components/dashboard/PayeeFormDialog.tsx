@@ -32,7 +32,6 @@ export function PayeeFormDialog({
   onSubmit,
 }: PayeeFormDialogProps) {
   const [name, setName] = useState("")
-  const [role, setRole] = useState("")
   const [address, setAddress] = useState("")
   const [amount, setAmount] = useState("")
   const [attempted, setAttempted] = useState(false)
@@ -54,7 +53,6 @@ export function PayeeFormDialog({
     setWasOpen(open)
     if (open) {
       setName(initialValue?.name ?? "")
-      setRole(initialValue?.role ?? "")
       setAddress(initialValue?.address ?? "")
       setAmount(initialValue ? String(initialValue.amount) : "")
       setAttempted(false)
@@ -65,8 +63,8 @@ export function PayeeFormDialog({
   }
 
   const validation = useMemo(
-    () => validatePayeeShape({ name, role, address, amount }),
-    [name, role, address, amount]
+    () => validatePayeeShape({ name, address, amount }),
+    [name, address, amount]
   )
 
   // Confirmation is required only for a NEW or CHANGED address (editing just the amount asks
@@ -119,21 +117,6 @@ export function PayeeFormDialog({
               onChange={(e) => setName(e.target.value)}
               placeholder="Luna"
               autoFocus
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="payee-role">
-              Role{" "}
-              <span className="font-normal text-muted-foreground">
-                (optional)
-              </span>
-            </Label>
-            <Input
-              id="payee-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              placeholder="editor"
             />
           </div>
 

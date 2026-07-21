@@ -5,13 +5,12 @@ import { findAddressOwner, findDuplicateAddresses } from "@/lib/rosterDedupe"
 export type Payee = {
   id: string
   name: string
-  role: string
   address: string
   amount: number
 }
 
 export function toPayee(row: StoredPayee): Payee {
-  return { id: row.id, name: row.name, role: row.role, address: row.address, amount: row.amount }
+  return { id: row.id, name: row.name, address: row.address, amount: row.amount }
 }
 
 function requireValid(input: PayeeInput): PayeeInput {

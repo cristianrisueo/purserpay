@@ -20,6 +20,13 @@ payout history**: proof they were paid through PurserPay. Below that value sits 
 6 per referred agency). The portal **reads**; it never signs a payout, never holds funds, never
 touches the non-custodial money path.
 
+**Copy is English-only** — the whole product ships one language; not a word of Spanish reaches a
+payee (FIX-2). **The referral block is always reachable regardless of receipt count** (FIX-2):
+value-first order is kept (receipts first), but the receipts list is **capped to its own scroll
+container** (`max-h`), so a 100-receipt history can never bury the growth banner + link beneath
+the fold — the prompt and the copyable link stay within ~one viewport, the whole point of the
+viral loop existing at all.
+
 ## The route model — `/portal`, not `/r/[code]`
 
 - [`/portal`](../src/app/portal/page.tsx) is **one URL for every affiliate**. There is **no
@@ -39,6 +46,11 @@ touches the non-custodial money path.
   affiliate path (attribution, the bounty claim, the Flex Card QR all keep working).
 - Like `/dashboard`, `/portal` is `"use client"` + `dynamic(ssr:false)` — it reads the injected
   wallet and tronweb, neither of which exists during SSR.
+- **The operator surfaces it from the dashboard.** The dashboard footer (left of "Download report")
+  carries a **"Payment link for your payees"** copy-button
+  ([`PortalLinkButton`](../src/components/dashboard/PortalLinkButton.tsx)) that copies the absolute
+  `${origin}/portal` — the single URL the operator hands to every payee. Because identity is the
+  payee's own signature (not the link), the same URL serves all payees and leaks nothing.
 
 ## §1 — The signature gate (reuses the payout challenge primitive)
 
@@ -316,9 +328,9 @@ wallet into the model).
 
 - The QR **always** resolves to `{origin}/r/{code}` (the affiliate's opaque code — **never a
   wallet**); a scanning agency lands on the untouched attribution route.
-- Microcopy is **honest**: *"Cobra sin comisiones de intermediario"* — never "sin comisiones" /
-  "elimina todas las comisiones" (which reads as a free product and burns the lead at the 150/mo
-  paywall).
+- Microcopy is **honest** and **English-only** (FIX-2): *"Get paid with zero intermediary fees"* —
+  never a "no fees ever" / "free" claim (which reads as a free product and burns the lead at the
+  150/mo paywall).
 - **Badge integrity (exact mode):** an exact-amount card prints the **Audit ID + a `/verify`
   reference**, tying the "✓ On-Chain Verified" seal to the 1B verifiable path — so a montaged
   "+900K" card can be caught (the `/verify` page shows the real on-chain amount).

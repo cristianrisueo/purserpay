@@ -189,7 +189,13 @@ function ReceiptsList({
       <h2 className="text-[13px] font-semibold tracking-wide text-muted-foreground uppercase">
         {receipts.length} payment{receipts.length === 1 ? "" : "s"} received
       </h2>
-      <ul className="flex flex-col gap-2">
+      {/* Cap the list to its own scroll area (FIX-2): the referral block below is the
+          growth engine — with 100 receipts an uncapped list would bury it beneath the
+          fold and the payee would never share. Bounding the list here keeps value-first
+          order (receipts still come first) while guaranteeing the prompt + link stay
+          reachable in ~one viewport, at any receipt count. `max-h` only caps, so a short
+          list is unaffected. */}
+      <ul className="flex max-h-[40vh] flex-col gap-2 overflow-y-auto pr-1">
         {receipts.map((r) => (
           // txid key: a wallet appears at most once per disperse tx (the unique
           // (txid, recipient) in the index), so txid is stable per row here.
@@ -429,12 +435,11 @@ function ViralBanner() {
       className="rounded-[14px] border border-primary/20 bg-primary/[0.06] px-5 py-4"
     >
       <p className="text-[14px] leading-relaxed font-medium text-foreground">
-        ¿Tu otra agencia todavía te cobra comisiones o te paga tarde? Recomiéndales
-        PurserPay.
+        Doesn&rsquo;t your other agency know PurserPay yet?
       </p>
       <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-        Por cada agencia que empieces a traer, ganas <b>50 USDT al mes durante 6 meses</b>.
-        Comparte tu enlace de abajo.
+        Refer us and earn up to <b>300 USDT</b> — 50 for each month they stay with us, for
+        their first 6.
       </p>
     </section>
   )

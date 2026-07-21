@@ -153,11 +153,6 @@ export function ResolveConflictsDialog({
                             {formatUsdt(candidate.row.amount)} USDT
                           </span>
                         </div>
-                        {candidate.row.role ? (
-                          <span className="truncate text-[12.5px] text-muted-foreground">
-                            {candidate.row.role}
-                          </span>
-                        ) : null}
                         <span className="text-[11.5px] text-muted-foreground">
                           Row {candidate.rowNumber}
                         </span>

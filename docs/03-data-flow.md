@@ -13,7 +13,7 @@
 
 | Tier | What | Where | Leaves the browser? |
 | --- | --- | --- | --- |
-| **Roster** | payee names, roles, addresses, amounts; payout receipts | **IndexedDB (Dexie)** — `src/lib/db.ts` | **Never** in readable form. Two public artifacts leave: the transaction the user signs, and — after it confirms — its **public txid** (best-effort, to populate the dissociated affiliate receipt index; see the note below + [`09`](./09-affiliate-portal.md)). Names, amounts, and cleartext recipient wallets never leave. |
+| **Roster** | payee names, addresses, amounts; payout receipts | **IndexedDB (Dexie)** — `src/lib/db.ts` | **Never** in readable form. Two public artifacts leave: the transaction the user signs, and — after it confirms — its **public txid** (best-effort, to populate the dissociated affiliate receipt index; see the note below + [`09`](./09-affiliate-portal.md)). Names, amounts, and cleartext recipient wallets never leave. |
 | **Account + compliance** | account holder's PII (name, country, tax id); OFAC screening data; **free-tier usage** (payer-wallet hash + last-used timestamp); **wallet-control challenges** (ephemeral nonce + payer-wallet hash) | **Supabase** — `0001_compliance_schema.sql`, `0002_free_tier_usage.sql`, `0004_payout_challenges.sql` | Yes, but **encrypted** (PII, pgcrypto AES-256) or **salted-hashed** (wallets — OFAC + free-tier + challenge). Never readable. (Subscription state is **on-chain**, read live — not stored here.) |
 
 The dividing line is absolute: **the server never receives the roster.** See
@@ -33,14 +33,21 @@ tier; this doc covers the roster tier and the payout pipeline.
 
 ## 2. The Dexie schema (`src/lib/db.ts`)
 
-DB name `purserpay`. Three stores (v2; v1 was roster-only, upgraded additively so
+DB name `purserpay`. Three stores (v3; v1 was roster-only, upgraded additively so
 existing rosters survive):
 
 | Store | Shape (key fields) | Purpose |
 | --- | --- | --- |
-| `payees` | `id`, `order`, `name`, `role`, `address`, `amount` | The roster. `order` is a `Date.now()` sort key (UUID PKs don't iterate in insertion order). |
+| `payees` | `id`, `order`, `name`, `address`, `amount` | The roster. A payee is **name + address + amount** — nothing else decides a payout. `order` is a `Date.now()` sort key (UUID PKs don't iterate in insertion order). |
 | `payments` | `id`, `txid`, `network`, `timestamp`, `payeeIds[]`, `recipients[]`, `totalBaseUnits` | A confirmed on-chain batch = the local receipt behind a green row. |
 | `meta` | `key`, `value` | Small KV. Holds `greenSince` — the green-cycle boundary. |
+
+**Schema history.** v1: roster only. v2: adds `payments` + `meta` (additive). **v3 (ROLE-1):
+retires the decorative payee `role` field.** `role` was never a Dexie *index* (only `id`, `order`
+are), so it was a plain stored property — existing payees survive the removal regardless. The v3
+`.upgrade()` (`tx.table("payees").toCollection().modify(dropRoleField)`, `src/lib/dbMigrations.ts`)
+only strips the now-dead `role` bytes from each stored row; **name/address/amount are preserved —
+no roster is wiped.** `dropRoleField` is a pure, node-tested transform (`tests/roster/migration.test.ts`).
 
 Roster CRUD is in `src/lib/roster.ts`; the CSV overwrite path (`replaceRoster`) is an
 **atomic** `clear()` + `bulkAdd()` transaction — if anything fails, the existing roster is
@@ -77,7 +84,10 @@ dependency-free) is the single source of truth, used by both paths:
   (`importConflicts` / `resolveImportConflicts` / `cancelImportConflicts`), like
   `ExchangeConfirmDialog`. `replaceRoster` also carries a defense-in-depth `findDuplicateAddresses`
   guard so the uniqueness invariant holds for any caller. (Dedupe is **within the incoming
-  file**; a full overwrite replaces the prior roster anyway.)
+  file**; a full overwrite replaces the prior roster anyway.) The importer maps only
+  **name / address / amount** (all three required); any other column in the file — including a
+  leftover **Role** column from an old spreadsheet — is simply never mapped and **ignored, never
+  errored** (ROLE-1 retired the payee `role` field).
 
 ## 3. Green = paid (derived, not a flag)
 
@@ -91,6 +101,11 @@ dependency-free) is the single source of truth, used by both paths:
   of the same roster can proceed. History (the downloadable report) ignores `since`.
 - A receipt on another network never greens a row here (`network` guard), and green
   survives a reload (it's in IndexedDB).
+- Both the **green row** (`PayoutTable.tsx`, an inline className over the `paidIds` prop) and the
+  **"Paid" status badge** (`columns.tsx`, read via the TanStack cell's `meta`) derive from the same
+  `paidIds`. The row is **keyed on its paid state** so it re-mounts the instant `paidIds` flips —
+  otherwise the badge (a `meta`-only change TanStack doesn't propagate to the memoized cell) would lag
+  the green until a reload. With the key, badge + green flip in the **same render** on pay success.
 
 This is what makes accidental **re-payment structurally hard**: a paid row is visibly
 green and excluded from `outstanding`/`payable` in the hook.

@@ -88,9 +88,6 @@ export const columns: ColumnDef<Payee>[] = [
         <div className="truncate font-medium text-foreground">
           {row.original.name}
         </div>
-        <div className="truncate text-[12.5px] text-muted-foreground">
-          {row.original.role}
-        </div>
       </div>
     ),
   },

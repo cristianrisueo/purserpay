@@ -44,17 +44,17 @@ export function SiteFooter() {
               contact
             </span>
             <a
-              href="mailto:info@purserpay.app"
+              href="mailto:dorian@sailorlabs.xyz"
               className="text-[14.5px] text-muted-foreground transition-colors hover:text-primary"
             >
-              info@purserpay.app
+              dorian@sailorlabs.xyz
             </a>
           </div>
         </div>
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
           <span className="font-mono text-[11px] text-[#93908A]">
-            © 2026 PurserPay · Non-custodial. You sign. You hold the keys.
+            © 2026 PurserPay · Built with passion by <a href="https://sailorlabs.xyz" className="text-primary hover:underline">SailorLabs</a> 🌊
           </span>
           <span className="font-mono text-[11px] text-[#93908A]">
             TRON · USDT (TRC20)

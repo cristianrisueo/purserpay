@@ -101,10 +101,10 @@ const BADGE = "On-Chain Verified"
 const FEE_LINE = "Intermediary fee: 0%"
 const NETWORK_LINE = "TRON · USDT" // TRON · USDT
 const SETTLED_LINE = "Settled & immutable"
-// Honest (D3.2): the PAYOUT carries no intermediary cut. NOT "sin comisiones" /
-// "elimina todas las comisiones" (which reads as a free product and burns the lead at
-// the 150/mo SaaS paywall).
-const CAPTURE_COPY = "Cobra sin comisiones de intermediario"
+// Honest (D3.2): the PAYOUT carries no intermediary cut — NOT a "no fees ever" / "free"
+// claim (which reads as a free product and burns the lead at the 150/mo SaaS paywall).
+// English-only, like the rest of the product (FIX-2).
+const CAPTURE_COPY = "Get paid with zero intermediary fees"
 
 function txShort(txid: string): string {
   const t = txid.trim()

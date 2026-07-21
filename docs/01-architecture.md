@@ -80,8 +80,10 @@ flowchart TD
 
 Key facts encoded above:
 
-- `src/app/page.tsx` is a **Server Component**; its interactive children (`HeroPayoutCard`,
-  the FAQ accordion, the wallet CTA) carry their own `"use client"` boundaries.
+- `src/app/page.tsx` is a **Server Component**; its interactive children (the FAQ accordion,
+  the wallet CTA) carry their own `"use client"` boundaries. `HeroPayoutCard` is now a **static,
+  server-rendered preview** — a faithful snapshot of the real dashboard pre-flight (HERO-1), with
+  no client state or animation.
 - `src/app/dashboard/page.tsx` does `dynamic(() => import("@/views/Dashboard"), { ssr:
   false })` — this reproduces the old Vite SPA's client-only mount and keeps `db.ts` /
   `tron/*` out of the server graph.

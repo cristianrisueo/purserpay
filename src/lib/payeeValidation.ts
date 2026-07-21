@@ -1,6 +1,5 @@
 export type PayeeInput = {
   name: string
-  role: string
   address: string
   amount: number
 }
@@ -39,7 +38,6 @@ export function parseAmount(raw: string): number | null {
  *  CSV cells) and returns a clean PayeeInput or a list of field errors. */
 export function validatePayeeShape(raw: {
   name: string
-  role?: string
   address: string
   amount: string | number
 }): ValidationResult {
@@ -65,6 +63,6 @@ export function validatePayeeShape(raw: {
 
   return {
     ok: true,
-    value: { name, role: (raw.role ?? "").trim(), address, amount: amount! },
+    value: { name, address, amount: amount! },
   }
 }

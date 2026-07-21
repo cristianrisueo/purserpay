@@ -83,10 +83,12 @@ test("NO wallet appears anywhere in the model, in any mode (D3.1)", () => {
   }
 })
 
-test("capture copy is HONEST — qualified, never an absolute 'free/zero fees' overpromise (D3.2)", () => {
+test("capture copy is HONEST + English-only — qualified to the intermediary fee, never a 'free' overpromise (D3.2 / FIX-2)", () => {
   const copy = model("hidden", 1450n, "1,450.5").captureCopy
-  assert.match(copy, /intermediario/i)
-  assert.doesNotMatch(copy, /gratis|todas las comisiones|elimina/i)
+  // Qualified to the INTERMEDIARY fee (the payout carries no cut), not an absolute claim.
+  assert.match(copy, /intermediary/i)
+  // No "free"/"no fees ever" overpromise, and no Spanish (the product ships English-only).
+  assert.doesNotMatch(copy, /\bfree\b|no fees|gratis|comisiones|intermediario|elimina/i)
 })
 
 test("rangeBucket / figureCount / groupThousands are deterministic", () => {

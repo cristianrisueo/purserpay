@@ -342,11 +342,18 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   behind **their own wallet signature** (REUSES the payout challenge with a `purpose="portal"`
   message that authorizes no on-chain action; keyed on `hash(signer)`, so no one sees another
   payee's income). Below the receipts: a copy-only viral banner + the payee's opaque `/r/{code}`
-  share link. Referring an agency banks a **manual bounty** (50 USDT/mo × 6) in a **grant-only**
+  share link. The **whole portal is English-only** and the **viral banner + referral link are
+  kept always-reachable** — the receipts list is **capped to its own scroll container** so a long
+  history never buries the growth block below the fold (FIX-2). Referring an agency banks a
+  **manual bounty** (50 USDT/mo × 6) in a **grant-only**
   ledger (`affiliate_bounties`) the owner settles by hand — a **debt accumulator**, NOT a
   wallet/on-chain balance, and it can never gate a payee's access to their receipts. `/r/[code]`
   is **untouched**. This whole system rides on an **UNVERIFIED hypothesis** (the payee values the
-  receipt; the bounty gives leverage) pending the first real customer conversation.
+  receipt; the bounty gives leverage) pending the first real customer conversation. **The operator
+  hands out `/portal` from the dashboard** (FIX-1): a **"Payment link for your payees"** copy-button
+  in the dashboard footer (left of "Download report", `PortalLinkButton.tsx`) copies the absolute
+  `${origin}/portal` — the same URL for everyone, since identity is the payee's own signature, not the
+  link. This surfaces the receipts link the operator shares; it is NOT the `/r/{code}` referral link.
 - Receipt PDF + verification (Sprint 1B — `docs/09` §5): each receipt downloads as a **PDF "proof
   of source of funds"** (NOT a tax/invoice/legal document) via `POST /api/affiliate/receipt`,
   gated by a **fresh `purpose="portal"` signature per download** (the 1A nonce is single-use — no
@@ -367,8 +374,9 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   stored data**. A **mandatory privacy toggle** picks how the amount shows — **hidden** ("N-figure
   payment", the SAFE default), **range** ("+X USDT"), or **exact** — and the **recipient wallet
   appears in NO mode** (the pure `flexModel` never even receives an address). The QR is the opaque
-  **`/r/{code}`** (never a wallet); copy is honest ("cobra sin comisiones de intermediario", not a
-  "free" overpromise); an **exact** card prints the **Audit ID + a `/verify` reference** so the
+  **`/r/{code}`** (never a wallet); copy is honest and **English-only** ("Get paid with zero
+  intermediary fees", not a "free" overpromise); an **exact** card prints the **Audit ID + a
+  `/verify` reference** so the
   "On-Chain Verified" badge is checkable (anti-montage, D4.1). Brand paint (bone/ink/aqua, **Inter
   Tight** via a vendored static woff — Satori can't use woff2); **no new image library**. Public
   product copy is **untouched**. Rides on the same **UNVERIFIED hypothesis** as the rest of the portal.
@@ -382,6 +390,11 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
 - The batch is **atomic**: all recipients paid in one tx, or none. No partial payout.
   Check balance ≥ sum-of-selected BEFORE enabling "Pay all"; if short, lock the button
   and say how much is missing — never silently drop payees.
+- **Green + "Paid" flip together, in-session (FIX-1).** "Paid" is derived from receipts
+  (`paidPayeeIds`), so it survives reload; the green row and the "Paid" status badge both read the
+  same `paidIds`. The payout row is **keyed on its paid state** (`PayoutTable.tsx`) so it re-mounts the
+  instant `paidIds` flips — otherwise the TanStack cell's badge (a `meta`-only change) lagged the green
+  until a reload. On pay success the badge and the green now appear in the **same render**.
 - The `disperse` **rejects Tether-frozen (blacklisted) destinations on-chain** (S-1). Real USDT
   does NOT check the destination — a transfer to a frozen address SUCCEEDS and traps the funds
   forever — so `disperse` reads the blacklist in the same tx and reverts the whole batch
@@ -424,6 +437,15 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   **last 6 chars** (anti clipboard-malware). Pure decision logic in `src/lib/security/preflightView.ts`
   + `preflightQueue.ts` (node-tested); UI in `columns.tsx` · `VerifyBadge.tsx` · `PreflightBanner.tsx`
   · `ExchangeConfirmDialog.tsx` · `PayeeFormDialog.tsx`. Still reads only — non-custodial untouched.
+- A payee is **name + address + amount** — nothing else decides a payout. The decorative **`role`
+  field was removed (ROLE-1)** from the data model, the CSV importer, the payout table, the add/edit
+  form, and the UX-3 conflict dialog; it never affected the money path. The Dexie schema is at **v3**:
+  `role` was never an *index* (only `id`, `order` are), so it was a plain stored property and the v3
+  `.upgrade()` (`dropRoleField`, `src/lib/dbMigrations.ts`) only **strips the dead `role` bytes from
+  existing payees — name/address/amount survive, no roster is wiped**. A CSV that still carries a
+  `Role` column imports fine (the column is ignored, never errored). The landing hero card's
+  decorative `role` (a separate marketing `Recipient` type) was ROLE-1's deferred landing half and
+  is **now removed in HERO-1** (see the hero reconciliation below).
 - The roster **guarantees unique addresses**, enforced at **insertion** (`src/lib/rosterDedupe.ts`,
   the single source of truth) — since the atomic batch is built straight from the roster, the same
   wallet twice would be a **silent double-payment**. "Duplicate" = the same base58 string, matched
@@ -508,13 +530,40 @@ lines still reflect the old model and must be reconciled in a dedicated copy pas
 **after** the Next.js port is verified 1:1 — not before:
 
 **Reconciled in the landing restructure sprint (done):**
-- `src/components/landing/Hero.tsx` — now "your money never leaves your wallet; your
-  roster never leaves your device" (the dissociation story), replacing the old absolute
-  "Your data never leaves your machine."
+- `src/components/landing/Hero.tsx` — replaced the old absolute "Your data never leaves your
+  machine." with the dissociation story (your money never leaves your wallet; your roster never
+  leaves your device). That story now lives in the hero's **benefits checklist** rather than the
+  headline — see the HERO-1 revision below.
 - `src/components/landing/content.tsx` (privacy FAQ) — reconciled to the same
   device-local roster framing; no blanket "we don't store it."
 - `src/components/landing/PricingSection.tsx` — now **150 / 1,500 USDT, on-chain** (no
   fiat, no card), replacing €249 / €2,490.
+
+**Revised in the hero benefits-checklist sprint (HERO-1):**
+- `src/components/landing/Hero.tsx` — the **original headline is restored** ("Pay everyone in one
+  transfer.", aqua accent on the closing phrase); the eyebrow ("non-custodial payouts for distributed
+  teams") is kept. The subhead paragraph is **replaced by a five-item benefits checklist** in the left
+  column, each item led by the brand's **aqua ✓✓** double-check (bold lead line over a muted sentence),
+  sized to **fill the column so it aligns with the card** on desktop. **Every checklist claim is
+  fidelity-bound to a shipped feature** — pre-flight address checks, device-local roster + one-button
+  wipe, self-declared minimal KYC at pay time, the affiliate receipt portal + dashboard record, and one
+  flat on-chain subscription with no volume cut — with truthful wording guards ("invalid formats" not
+  "typos"; "minimal KYC in under a minute" not "100% anonymous"; "one flat subscription" not "two
+  tariffs"). The dissociation message now lives in the checklist (items 2 + 5), **not** the headline.
+  Copy is the single-source `heroBenefits` in `content.tsx`.
+- `src/components/landing/HeroPayoutCard.tsx` + `content.tsx` — still a **faithful, STATIC replica of
+  the real dashboard pre-flight**, now **tightened to four rows** (Priya removed): a paid-before row
+  (✓✓ green), clean "Valid on TRON" rows (✓ aqua), an amber **Exchange?** advisory, and one red
+  **Frozen (Tether)** row, above the real "Before you pay" strip. **Fidelity is a hard rule** — only
+  states/badges/copy the live app produces (mirrored from `columns.tsx` / `VerifyBadge.tsx` /
+  `PreflightBanner.tsx`); no animation. The **frozen row renders UNCHECKED** — as an operator would
+  leave a blocked row — so **"Pay all" stays legitimately active** over the three clean rows; this
+  mirrors the app, where `blockedCount` / the selected sum / the pre-flight summary are all computed
+  over **selected** rows (`usePayout.ts`). Because the "Before you pay" strip summarizes the
+  **selected** batch, it shows **only the amber exchange line** (the red frozen line drops); the frozen
+  row keeps its always-on **red inline badge + disabled per-row Pay**. Footer reads "3 selected · 1,300
+  USDT". The decorative **`Recipient.role` was already removed** (ROLE-1's deferred landing half). Green
+  stays paid-only; brand tokens only.
 
 **Still pending (non-landing).** The port is verified 1:1, so this copy pass is now
 **unblocked** — but it is deliberately deferred to its own dedicated pass (this doc-audit

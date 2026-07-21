@@ -12,9 +12,9 @@ import {
   type RowConflictGroup,
 } from "@/lib/rosterDedupe"
 
-export type FieldKey = "name" | "role" | "address" | "amount"
+export type FieldKey = "name" | "address" | "amount"
 
-/** Header string the user picked for each field. `role` absent = not mapped. */
+/** Header string the user picked for each field. All three are required. */
 export type ColumnMapping = Partial<Record<FieldKey, string>>
 
 export type RawCsvTable = {
@@ -26,7 +26,6 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
   name: "Name",
   address: "Address",
   amount: "USDT amount",
-  role: "Role",
 }
 
 const REQUIRED_FIELDS: readonly FieldKey[] = ["name", "address", "amount"]
@@ -143,7 +142,6 @@ export function applyMapping(
   table.rows.forEach((raw, i) => {
     const result = validatePayeeShape({
       name: raw[mapping.name!] ?? "",
-      role: mapping.role ? (raw[mapping.role] ?? "") : "",
       address: raw[mapping.address!] ?? "",
       amount: raw[mapping.amount!] ?? "",
     })
@@ -191,7 +189,7 @@ export function applyMapping(
 export function describeMappingCollision(mapping: ColumnMapping): string | null {
   const byHeader = new Map<string, FieldKey[]>()
 
-  for (const field of ["name", "role", "address", "amount"] as const) {
+  for (const field of ["name", "address", "amount"] as const) {
     const header = mapping[field]
     if (!header) continue
     const fields = byHeader.get(header) ?? []

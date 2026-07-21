@@ -89,7 +89,7 @@ const sections: PolicySection[] = [
     n: "5",
     heading: "Contact",
     intro:
-      "For technical or infrastructure support, contact our operational desk at info@purserpay.app.",
+      "For technical or infrastructure support, contact our operational desk at dorian@sailorlabs.xyz.",
   },
 ]
 

@@ -131,8 +131,15 @@ export function PayoutTable({
               const paid = paidIds.has(row.original.id)
               const selected = row.getIsSelected()
               return (
+                // Key on the paid state so a row RE-MOUNTS the instant it flips paid. Without this,
+                // the green highlight (this inline className, read from the `paidIds` prop) updates on
+                // pay success but the "Paid" status badge — read inside the TanStack cell via
+                // `table.options.meta` — doesn't re-render on a meta-only change until a page reload
+                // (the TanStack v8 mutable-meta gotcha). Re-keying forces the just-paid row's cells to
+                // re-derive, so the badge and the green appear in the SAME render. Row selection lives
+                // in TanStack (getRowId=row.id) and is untouched by the React key.
                 <TableRow
-                  key={row.id}
+                  key={`${row.id}:${paid ? "paid" : "open"}`}
                   className={cn(
                     "border-border transition-colors",
                     paid

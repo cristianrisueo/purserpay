@@ -1,5 +1,7 @@
 import Dexie, { type EntityTable } from "dexie"
 
+import { dropRoleField } from "@/lib/dbMigrations"
+
 // The roster's only home. Names/addresses/amounts live here, in the client's
 // own IndexedDB, and nowhere else — never localStorage, never a server call.
 export type StoredPayee = {
@@ -8,7 +10,6 @@ export type StoredPayee = {
    *  insertion order, so row order needs its own indexed field. */
   order: number
   name: string
-  role: string
   address: string
   amount: number
 }
@@ -55,6 +56,17 @@ db.version(2).stores({
   payments: "id, txid, timestamp, *payeeIds",
   meta: "key",
 })
+// v3 (ROLE-1): the payee `role` field is retired. No index changed (role was never
+// indexed), so this is a data-cleanup upgrade — it strips the now-dead `role` bytes
+// from every existing stored payee WITHOUT wiping the roster: name/address/amount all
+// survive. New DBs start here clean; upgraded ones lose only `role`.
+db.version(3)
+  .stores({
+    payees: "id, order",
+    payments: "id, txid, timestamp, *payeeIds",
+    meta: "key",
+  })
+  .upgrade((tx) => tx.table("payees").toCollection().modify(dropRoleField))
 
 if (process.env.NODE_ENV !== "production") {
   // Lets devtools/testing seed or inspect the roster directly, without a
