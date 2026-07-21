@@ -41,20 +41,27 @@ type NetworkConfig = {
   usdt: string
 }
 
-// --- Nile testnet (deployed) ------------------------------------------------
+// --- Nile testnet (deployed — S-1 GUARDED build) ----------------------------
 // The unified PurserPay contract (disperse + subscribe); its disperse/Dispersed/error
 // selectors are byte-for-byte preserved from the prior PurseDisperseUsdt, so the money
-// path is untouched. disperse is permissionless + immutable; the owner controls ONLY the
-// subscription fees + the treasury destination — never funds, keys, broadcast, or disperse.
+// path is untouched. disperse is permissionless + immutable and now carries the S-1
+// frozen-address guard (reverts DestinationBlacklisted / SenderBlacklisted, USDT-only via
+// UnsupportedToken); the owner controls ONLY the subscription fees + the treasury
+// destination — never funds, keys, broadcast, or disperse. NOTE — Nile now LEADS mainnet:
+// this Nile block is the S-1 guarded build (N-1 rehearsal), while the MAINNET block below
+// is still the PRE-guard bytecode until the S-4 redeploy.
 // Constructor: usdt = TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile USDT, Tether USD, 6dp),
 // treasuryWallet = owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer). Fees at deploy:
-// 150 / 1,500. Deploy tx: 6e3df940ea64fda7699a60812f4d4f0ae334a081801bd4e2b0f23d73a838f307
-// (46.97 TRX / 580,485 energy).
+// 150 / 1,500. Deploy tx: 610c560920a1248a829a641fd7ebf5446cf00dd2d0332ea14ff558ba683449c4
+// (55.79 TRX / 668,613 energy — N-1, 2026-07-19; usdt()/owner()/treasury()/prices read back
+// on-chain ✓).
 // (Superseded deploys — do not reuse: TCmBbaSkcWVbXy85yQGQVkUaB2tUrDMk82 wrong token;
 // TREGLgfBEt8hfJHr9euGqzYAqLMTNc4A8x disperse-only; THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c old
 // price 250/2,500; TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY immutable fees;
 // TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG prior bytecode — immutable treasury, before
-// updateTreasuryWallet; deploy tx 2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d.)
+// updateTreasuryWallet, deploy tx 2167ed646bda86e87ed3b8e4abc064f9a88020a2ad5515f0692e123f4ed2886d;
+// TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX PRE-GUARD (before S-1), superseded by N-1, deploy tx
+// 6e3df940ea64fda7699a60812f4d4f0ae334a081801bd4e2b0f23d73a838f307, 46.97 TRX / 580,485 energy.)
 const NILE: NetworkConfig = {
   network: {
     key: "nile",
@@ -63,7 +70,7 @@ const NILE: NetworkConfig = {
     hostMatch: "nile",
     explorer: "https://nile.tronscan.org",
   },
-  purserPay: "TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX",
+  purserPay: "TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb",
   usdt: "TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf",
 }
 

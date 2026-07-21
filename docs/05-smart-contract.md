@@ -25,11 +25,13 @@ Zero external Solidity dependencies: `ITRC20` (transfer selector) and `IUsdt` (t
 `getBlackListStatus` view the guard reads) are declared inline and ownership is inline (no
 OpenZeppelin import), matching the pure-Foundry / forge-std-only build.
 
-> **⚠ The S-1 guard changed the bytecode — a mainnet REDEPLOY (S-4) is now required.** This
-> sprint **builds and tests** the guard only; it does **not** deploy. Today's mainnet contract
+> **⚠ The S-1 guard changed the bytecode — a mainnet REDEPLOY (S-4) is still required.** The guard
+> is now **deployed + verified on Nile** (`TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`, N-1 2026-07-19 — the
+> S-4 dress rehearsal), but **mainnet is still the pre-guard build**. Today's mainnet contract
 > (`TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`) is **superseded once S-4 runs**, and
-> `feeLimitForBatch()` / `ENERGY_*` must be **re-measured with the guard included** at deploy
-> (see [`06`](./06-deployment.md)). The non-custodial invariant is unchanged.
+> `feeLimitForBatch()` / `ENERGY_*` must be **re-measured with the guard included** on mainnet at
+> deploy (N-1 measured the guard's delta on Nile — see [`06`](./06-deployment.md) §6). The
+> non-custodial invariant is unchanged.
 
 ## 2. Invariant & ownership model
 
@@ -158,8 +160,9 @@ initializes fees to `150e6 / 1500e6`.
 > The `disperse`/`Dispersed`/four-guard **selectors are byte-for-byte preserved** from the
 > prior `PurseDisperseUsdt` contract, so the frontend's positional call and revert-decoding
 > keep working across the rename to PurserPay. The three S-1 selectors are keccak-derived and
-> already registered in `abi.ts` (`ERROR_SELECTORS`); they are **not mined on-chain until S-4
-> deploys** the guarded bytecode.
+> already registered in `abi.ts` (`ERROR_SELECTORS`); they are **mined on-chain on Nile as of
+> N-1** (the guarded redeploy, `TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`) but **not on mainnet until
+> S-4** deploys the guarded bytecode there.
 
 ## 6. ABI ↔ frontend mapping (`src/lib/tron/abi.ts`)
 
@@ -173,7 +176,7 @@ itself to show a calm human message.
 | `DISPERSE_ABI` / `PURSERPAY_ABI` (alias) | full contract surface; `disperse.ts` binds `DISPERSE_ABI`, new code prefers `PURSERPAY_ABI` |
 | `ERC20_ABI` | `balanceOf`, `allowance`, `decimals`, `approve` (USDT-TRC20) |
 | `DISPERSED_TOPIC0`, `SUBSCRIPTION_PAID_TOPIC0` | event topic0 for log matching (no `0x` prefix — TRON's log format) |
-| `ERROR_SELECTORS` | 4-byte selector → `{name, indexHint}`; the four disperse guards were verified live on Nile, the transfer/config/plan guards are keccak-derived, plus two OZ ERC20 errors surfaced through the mock |
+| `ERROR_SELECTORS` | 4-byte selector → `{name, indexHint}`; the four original disperse guards were verified live on Nile, the three S-1 guards (`UnsupportedToken`/`DestinationBlacklisted`/`SenderBlacklisted`) are now live on Nile too as of **N-1**, the transfer/config/plan guards are keccak-derived, plus two OZ ERC20 errors surfaced through the mock |
 
 If you change any error or event signature in the contract, you **must** update the
 selectors/topics here or the frontend will show raw reverts.

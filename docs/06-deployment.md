@@ -12,11 +12,12 @@
 - **App:** Next.js on Vercel. Landing `/` (SSR), dashboard `/dashboard` (client-only).
 - **Chain:** **TRON, selected at BUILD time** by `NEXT_PUBLIC_TRON_NETWORK` (`mainnet | nile`).
   **Both networks now carry the deployed contract** (mainnet `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`,
-  nile `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX`). The mainnet contract is live on-chain and wired in
+  nile `TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`). The mainnet contract is live on-chain and wired in
   `config.ts`, but the **production Vercel env flip** (`NEXT_PUBLIC_TRON_NETWORK=mainnet`) is still
-  pending — so customers are not on mainnet yet. **Note:** `TLdySJX…` is the **pre-S-1-guard**
-  bytecode; the S-1 frozen-address guard requires a mainnet **redeploy (S-4)** that supersedes it —
-  see §6 and [`05`](./05-smart-contract.md).
+  pending — so customers are not on mainnet yet. **Note:** the two networks are on **different
+  bytecode** — nile is the **S-1 guarded** build (redeployed in **N-1**, 2026-07-19), while
+  `TLdySJX…` (mainnet) is still the **pre-S-1-guard** build; the guard requires a mainnet **redeploy
+  (S-4)** that supersedes it — see §6 and [`05`](./05-smart-contract.md).
 - **DB:** Supabase (compliance/PII). Roster is device-local (no deploy concern).
 
 ### The two-environment model (production vs local development)
@@ -157,19 +158,22 @@ fixed after the fact).
 > now attach `TRON_PRO_API_KEY` and **require it on mainnet** (`apiKeyHeaders`) — a keyless mainnet
 > deploy/read 429s. Address recovered from the on-chain `CreateSmartContract` tx and verified.
 
-### Nile deployment — SANDBOX environment (verified in `config.ts` + `sprint_report.txt`)
+### Nile deployment — SANDBOX environment, S-1 GUARDED build (verified in `config.ts` + `sprint_report.txt`)
 
-Nile carries the same bytecode (deployed in the dress rehearsal that preceded mainnet).
+**Nile now LEADS mainnet.** As of **N-1 (2026-07-19)** Nile carries the **S-1 guarded** bytecode (the
+frozen-address guard), redeployed as the dress rehearsal for the mainnet redeploy (**S-4**). Mainnet
+is still the **pre-guard** build until S-4. `usdt()`/`owner()`/`treasuryWallet()`/prices were read
+back on-chain post-deploy via `verify-e2e.cjs` (all ✓).
 
 | Thing | Value |
 | --- | --- |
-| `PURSERPAY_ADDRESS` = `DISPERSE_ADDRESS` (same contract) | `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX` |
+| `PURSERPAY_ADDRESS` = `DISPERSE_ADDRESS` (same contract) | `TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb` |
 | `USDT_ADDRESS` (Nile USDT, Tether USD, 6 dp) | `TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf` |
 | `treasuryWallet` (storage; owner-updatable) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
 | `owner` (= deployer = Wallet 1 = treasury) | `TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2` |
 | Fees at deploy | `SUBSCRIPTION_PRICE = 150e6`, `SUBSCRIPTION_PRICE_ANNUAL = 1500e6` |
-| Deploy tx | `6e3df940ea64fda7699a60812f4d4f0ae334a081801bd4e2b0f23d73a838f307` |
-| Deploy cost | 46.97 TRX / 580,485 energy (the mainnet run then cost 62.71 TRX — no staked energy) |
+| Deploy tx | `610c560920a1248a829a641fd7ebf5446cf00dd2d0332ea14ff558ba683449c4` |
+| Deploy cost | **55.79 TRX / 668,613 energy** (guarded; the pre-guard Nile build was 580,485 → the guard adds ~15% to *deploy* code) |
 
 **Superseded deploys** (kept in the `config.ts` comments as history — do not reuse):
 
@@ -180,6 +184,7 @@ Nile carries the same bytecode (deployed in the dress rehearsal that preceded ma
 | `THGTj7WRV7ZJMLabUyMgkAduw2NLD3W52c` | old price 250 / 2,500 |
 | `TXFZ2f4DDWB35zLyLLMPErKQyjoz9S1nEY` | immutable fees (before owner-adjustable) |
 | `TXkQ55A9XE28A8gF8FxNgSTTQREiiMxurG` | prior bytecode — immutable `treasuryWallet`, before `updateTreasuryWallet` |
+| `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX` | **PRE-GUARD** (before S-1); superseded by N-1. Deploy tx `6e3df940…`, 46.97 TRX / 580,485 energy |
 
 ### The fail-closed sentinel
 
@@ -288,7 +293,9 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
    - **The caller needs a standing allowance to PurserPay** — a constant call still runs the real
      `transferFrom`, which reverts on a zero/short allowance. Approve PurserPay for a small amount
      ONCE (~1.5 TRX one-time tx) from the measure wallet; the script aborts with instructions if
-     the allowance is zero (never a garbage number).
+     the allowance is zero (never a garbage number). Use **`scripts/tron/approve.cjs`** for that
+     one tx — same safe-by-default shape as `deploy.cjs` (dry preflight; broadcasts only with
+     `CONFIRM_APPROVE=1`; asserts the signer; USDT-safe non-zero→0→target reset built in).
 
    The script solves `PER = (energy(10) − energy(1))/9`, `BASE = energy(1) − PER`, sanity-checks
    linearity against N=2/3/5, and prints the feeLimit @ `BATCH_CAP` (100) with the 1.5×
@@ -303,14 +310,27 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
    (under the 15,000 TRX max). **fresh/existing ≈ 1.72×** (fresh N=3 = 473,747 energy vs existing
    holders = 275,747) — fresh is the worst case AND the real case, so we size against it.
 
-   > **⚠ STALE after S-1 — RE-MEASURE the guarded contract in S-4.** The 2026-07-14 numbers were
-   > measured against the **pre-guard** contract at `TLdySJX…`. The S-1 frozen-address guard adds,
+   > **⚠ STILL STALE for MAINNET — RE-MEASURE the guarded contract in S-4.** The 2026-07-14 numbers
+   > above were measured against the **pre-guard** mainnet contract at `TLdySJX…`. The S-1 guard adds,
    > per row, one `getBlackListStatus` STATICCALL + one `isBlackListed` SLOAD on USDT (plus one once
-   > for the payer) — small next to the ~157,000 energy a fresh recipient already costs, but **not
-   > zero**, and it is **not yet deployed**. Do **not** guess a new number: after S-4 deploys the
-   > guarded bytecode, re-run `scripts/tron/measure-mainnet.cjs` against the NEW address and
-   > recalibrate `ENERGY_PER_RECIPIENT_FRESH` / `feeLimitForBatch()` from the real constant-call
-   > reading. This recalibration is an **OPEN GAP to close at deploy** (`config.ts` unchanged until then).
+   > for the payer). **N-1 (2026-07-19) MEASURED that delta on Nile** — `scripts/tron/measure-nile.cjs`,
+   > constant-call against the guarded contract `TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`, all-fresh
+   > recipients, N=1/2/3/5/10, **linear-fit residual 0.0%**:
+   >
+   > | | pre-guard NILE | guarded NILE (N-1) | delta |
+   > | --- | --- | --- | --- |
+   > | energy / fresh recipient | ~36,925 | **38,028** | **+1,103 (+3.0%)** |
+   > | per-tx BASE | ~3,000 | ~4,198 | +~1,200 (the one payer-guard staticcall) |
+   >
+   > So the guard is **real but small — ~1,100 energy/row, one STATICCALL + one SLOAD**, exactly the
+   > S-1 estimate. That delta is roughly **absolute** (a fixed staticcall+SLOAD), so on mainnet it is
+   > the same order of magnitude — **<1%** of the pre-guard **157,000**/recipient, trivially inside the
+   > 1.5× `FEE_MARGIN`. **Do NOT copy the Nile numbers into the mainnet constants** (Nile USDT is not
+   > mainnet Tether — the pre-guard Nile figure was already 3.9× under mainnet). After **S-4** deploys
+   > the guarded bytecode to mainnet, re-run `scripts/tron/measure-mainnet.cjs` against the NEW address
+   > and recalibrate `ENERGY_PER_RECIPIENT_FRESH` / `feeLimitForBatch()` from the real reading. That
+   > mainnet recalibration is the **OPEN GAP that remains** (`config.ts` mainnet constants unchanged
+   > until then); the Nile guard-delta measurement (this GAP's Nile half) is **closed**.
 
    > **⚠ NILE'S USDT WAS NOT REPRESENTATIVE OF MAINNET TETHER — a 3.9× MISS.** The Nile mock/rehearsal
    > read ~36,925 energy/recipient; mainnet reads **157,000**. The old Nile constant (40,000) left the

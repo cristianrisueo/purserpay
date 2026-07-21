@@ -283,10 +283,13 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   infra for a single user; the local Docker DB does it with true, physical isolation). Non-mainnet
   builds show a persistent SANDBOX banner. Local dev's `WALLET_SALT` **must differ** from
   production's or the wallet hashes collide (see docs/04 §5). The contract is **deployed on both networks**
-  (mainnet `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`, nile `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX`) and
+  (mainnet `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`, nile `TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`) and
   the mainnet address is wired into `config.ts`; the **production Vercel env flip
   (`NEXT_PUBLIC_TRON_NETWORK=mainnet`) is still pending**, so customers are not on mainnet yet.
-  Mainnet script deploys/reads **require `TRON_PRO_API_KEY`** (keyless mainnet calls 429).
+  **The two networks are on DIFFERENT bytecode:** nile is the **S-1 guarded** build (redeployed in
+  **N-1**, 2026-07-19, superseding the pre-guard `TK9z7J4TZBB5UjaFmE8kvNDehdAJFecUnX`); mainnet is
+  still the **pre-guard** build until S-4. Mainnet script deploys/reads **require `TRON_PRO_API_KEY`**
+  (keyless mainnet calls 429).
 - Wallets in V1: **TronLink + WalletConnect**. (No Ledger yet.)
 - Pricing: **150 USDT/month or 1,500 USDT/year** (2 months free), paid **on-chain via
   smart contract** — no fiat, no card, no Stripe. Both plans are live. The owner surface is
@@ -385,9 +388,11 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   (`DestinationBlacklisted`), names a frozen payer (`SenderBlacklisted`), and is **USDT-only**
   (`token` must equal the immutable `usdt`, else `UnsupportedToken`). Atomic: a frozen row rolls
   the batch back, no trapped funds; the guard only *rejects*, never redirects — non-custodial is
-  untouched. **Built + tested, NOT deployed:** it changes the bytecode, so a mainnet **redeploy
-  (S-4) is required** — today's mainnet contract is superseded once S-4 runs, and
-  `feeLimitForBatch()` must be recalibrated with the guard included at deploy.
+  untouched. **Built + tested + DEPLOYED ON NILE (N-1), NOT on mainnet:** it changes the bytecode, so
+  a mainnet **redeploy (S-4) is still required** — the guard is live + verified on nile
+  (`TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`, 2026-07-19), but today's mainnet contract is still pre-guard
+  and is superseded once S-4 runs; `feeLimitForBatch()` must be recalibrated with the guard included
+  at the mainnet deploy (N-1 measured the guard's per-row delta on nile — see docs/06 §6).
 - The dashboard's **pre-flight preview is ADVISORY; the on-chain guard is the guarantee** (S-2).
   It reads each destination's USDT blacklist server-side and flags likely exchange addresses, but a
   blacklist read that fails/times-out/rate-limits is **`UNVERIFIED`, never SAFE** (D-7 — a failure
