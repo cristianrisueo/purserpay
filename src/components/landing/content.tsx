@@ -93,8 +93,8 @@ export const heroBenefits: HeroBenefit[] = [
     body: "Each recipient opens a link to view, download (PDF), and on-chain-verify every payment you sent them — and you get a full record of every payout in your dashboard.",
   },
   {
-    title: "One flat subscription — never a cut of your volume.",
-    body: "Monthly or yearly, one price. We never take a percentage of what you send.",
+    title: "Try it free, then one flat price — never a cut of your volume.",
+    body: "Send your first payout without paying us anything. After that: monthly or yearly, one price, and we never take a percentage of what you send.",
   },
 ]
 
