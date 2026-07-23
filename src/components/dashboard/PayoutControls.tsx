@@ -4,6 +4,7 @@ import { formatUsdt } from "@/lib/format"
 import type { PayeeInput } from "@/lib/payeeValidation"
 import type { RowConflictGroup } from "@/lib/rosterDedupe"
 import type { BatchPhase } from "@/hooks/usePayout"
+import type { ResourceAssessment } from "@/lib/security/resourceCheck"
 import type { PurserError } from "@/lib/tron/errors"
 
 import { AddPayeeButton } from "./AddPayeeButton"
@@ -23,6 +24,8 @@ type PayoutControlsProps = {
   paying: boolean
   verifying: boolean
   canPayAll: boolean
+  /** Live energy/bandwidth/TRX affordability of the selected batch, for the pre-check line. */
+  resourceStatus: ResourceAssessment
   /** Free tier — "Pay all" is locked; a Subscribe CTA takes its place. */
   freeMode: boolean
   batchPhase: BatchPhase
@@ -92,6 +95,67 @@ function statusLine({
   }
 }
 
+/**
+ * The resource pre-check line, shown in the otherwise-ready state (balance covers the amount, no
+ * blocked rows). "Constant to orient" — the reactive estimate; the authoritative gate is the
+ * pay-time simulation (disperse.ts). Doctrine: green = PAID only (sufficient is neutral, never
+ * green); a HARD block is red (amber is advisory-only, never a block); the comparator is a neutral
+ * link to a third party. English only.
+ */
+function ResourceLine({ resource }: { resource: ResourceAssessment }) {
+  if (resource.verdict === "unknown") {
+    // Resources unreadable — be honest, never block (Pay all stays enabled).
+    return (
+      <div className="mt-1 text-[13px] text-muted-foreground">
+        Balance covers the amount — couldn't check energy or bandwidth. You can still pay, at your
+        own risk.
+      </div>
+    )
+  }
+
+  if (resource.verdict === "insufficient") {
+    // A HARD block (Pay all is disabled) → red per the S-3 doctrine (amber is advisory-only, never a
+    // block). The disabled button always explains itself, right here.
+    const message =
+      resource.shortfallKind === "ceiling"
+        ? "This batch needs more energy than the current fee ceiling allows — split it into smaller batches to continue."
+        : resource.shortfallKind === "bandwidth"
+          ? `Not enough bandwidth — this batch needs about ~${resource.trxNeeded} TRX in fees. Top up TRX to continue.`
+          : `Not enough energy — you need about ${resource.gapEnergy.toLocaleString("en-US")} more (~${resource.trxNeeded} TRX). Rent energy or top up TRX to continue.`
+    return (
+      <div className="mt-1 text-[13px] font-medium text-destructive">
+        {message}
+        {resource.shortfallKind !== "ceiling" ? (
+          <>
+            {" "}
+            <a
+              href="https://netts.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-normal underline underline-offset-2 hover:text-foreground"
+            >
+              Compare energy providers
+            </a>
+            <span className="font-normal text-muted-foreground">
+              {" "}
+              (third-party, not affiliated with PurserPay)
+            </span>
+          </>
+        ) : null}
+      </div>
+    )
+  }
+
+  // sufficient — quiet and neutral (NOT green: green = paid only). ~0 TRX when energy fully covers it.
+  const fee = resource.trxNeeded > 0 ? `, ~${resource.trxNeeded} TRX in fees` : ""
+  return (
+    <div className="mt-1 text-[13px] text-muted-foreground">
+      Wallet covers this batch · about {resource.energyRequired.toLocaleString("en-US")} energy
+      {fee}.
+    </div>
+  )
+}
+
 function payingLabel(phase: BatchPhase): string {
   switch (phase.kind) {
     case "resetting":
@@ -127,6 +191,7 @@ export function PayoutControls({
   paying,
   verifying,
   canPayAll,
+  resourceStatus,
   freeMode,
   batchPhase,
   payError,
@@ -176,13 +241,17 @@ export function PayoutControls({
           <div className="mt-1 text-[13px] font-medium text-destructive">
             {payError.message}
           </div>
+        ) : status.tone === "ready" ? (
+          // Otherwise ready to pay (balance covers the amount, no blocked rows) — the generic
+          // "Balance covers all N selected" gives way to the live resource pre-check, which is the
+          // more useful signal at this moment: can the wallet actually afford the fees?
+          <ResourceLine resource={resourceStatus} />
         ) : (
           <div
             className={cn(
               "mt-1 text-[13px]",
               status.tone === "warn" && "font-medium text-destructive",
               status.tone === "done" && "font-medium text-success",
-              status.tone === "ready" && "text-muted-foreground",
               status.tone === "muted" && "text-muted-foreground"
             )}
           >

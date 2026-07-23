@@ -17,6 +17,13 @@
  *  fail-safe bucket — it explicitly does NOT assert the address is clean. */
 export type BlacklistStatus = "SAFE" | "FROZEN" | "UNVERIFIED"
 
+/** The combined per-address pre-flight signal (Sprint: toolbar resource pre-check): the frozen
+ *  status (fail-safe, above) PLUS whether the address currently holds USDT. `holdsUsdt === null`
+ *  means the holding read was unavailable → the resource estimate treats it as FRESH (the worst,
+ *  most-expensive case — never under-estimates energy). Carried through the same throttled queue as
+ *  the frozen read, so both signals arrive in one server round-trip per batch. */
+export type PreflightCell = { frozen: BlacklistStatus; holdsUsdt: boolean | null }
+
 /** Reads USDT's `getBlackListStatus(address)` for one address. Resolves `true`
  *  (frozen) or `false` (clean); MUST REJECT on any RPC failure / timeout / rate-limit
  *  so the caller can map it to UNVERIFIED (never SAFE). */

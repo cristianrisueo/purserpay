@@ -3,12 +3,18 @@ import { ensureAllowance } from "./allowance"
 import type { InjectedTronWeb } from "./client"
 import { getInjectedTronWeb } from "./client"
 import {
+  BANDWIDTH_BASE_BYTES,
+  BANDWIDTH_PER_RECIPIENT_BYTES,
   BATCH_CAP,
   DISPERSE_ADDRESS,
+  ENERGY_PRICE_SUN,
   feeLimitForBatch,
+  feeLimitFromEnergy,
   FEE_FLOOR_SUN,
   USDT_ADDRESS,
 } from "./config"
+import { getWalletResources } from "./resources"
+import { assessResources } from "../security/resourceCheck"
 import { toBaseUnits } from "./amount"
 import {
   decodeRevert,
@@ -95,6 +101,45 @@ export async function getAllowance(operator: string): Promise<bigint> {
     return toBig(raw)
   } catch (e) {
     throw rpcUnreachable(String(e))
+  }
+}
+
+export type EnergySimulation = { ok: boolean; energy: number | null }
+
+/**
+ * Simulate the REAL disperse batch via triggerConstantContract (no signature, no spend — exactly
+ * what TronLink does to quote a fee) and read back energy_used. This is the AUTHORITATIVE pay-time
+ * energy figure: it reflects the live contract state (dynamic energy `getAllowDynamicEnergy=1`,
+ * protocol/USDT upgrades) that the static `ENERGY_*` constant can't. Because it runs the contract's
+ * real `transferFrom`, it is faithful ONLY once the operator's allowance is in place — call it
+ * AFTER `ensureAllowance`. On a revert or read failure it returns `{ ok:false, energy:null }` and the
+ * caller falls back to the constant-sized feeLimit (never a false block). Read-only: nothing signed,
+ * no funds move — non-custodial untouched.
+ */
+export async function simulateDisperseEnergy(
+  operator: string,
+  addresses: string[],
+  units: bigint[]
+): Promise<EnergySimulation> {
+  const tw = getInjectedTronWeb()
+  if (!tw) return { ok: false, energy: null }
+  try {
+    const res = (await tw.transactionBuilder.triggerConstantContract(
+      DISPERSE_ADDRESS,
+      "disperse(address,address[],uint256[])",
+      {},
+      [
+        { type: "address", value: USDT_ADDRESS },
+        { type: "address[]", value: addresses },
+        { type: "uint256[]", value: units.map((u) => u.toString()) },
+      ],
+      operator
+    )) as { result?: { result?: boolean }; energy_used?: number }
+    const ok = res?.result?.result === true
+    const energy = typeof res?.energy_used === "number" ? res.energy_used : null
+    return { ok: ok && energy != null, energy: ok ? energy : null }
+  } catch {
+    return { ok: false, energy: null }
   }
 }
 
@@ -252,6 +297,49 @@ export async function runDisperse(
     const batch = batches[b]
     const rowIds = batch.map((r) => r.id)
     const labels = batch.map((r) => r.address)
+    const addresses = batch.map((r) => r.address)
+    const unitList = batch.map((r) => r.units)
+
+    // AUTHORITATIVE pay-time energy gate — constant to orient (the toolbar), MEASUREMENT to gate
+    // (here). The allowance is now in place (ensureAllowance above), so a constant-call SIMULATION of
+    // THIS batch is faithful and reflects live contract state (dynamic energy / upgrades) the static
+    // constant can't. We use it to (1) size the real fee_limit from the measurement — free, a ceiling
+    // not a charge, and what actually prevents a stale-constant OUT_OF_ENERGY — and (2) BLOCK, before
+    // any signature, if the wallet demonstrably can't afford it (the exact revert-that-pays-nobody
+    // this feature exists to stop). If the simulation can't produce a figure, fall back to the
+    // constant-sized feeLimit and proceed — never a false block on missing data.
+    let sendFeeLimit = feeLimitForBatch(batch.length)
+    const sim = await simulateDisperseEnergy(operator, addresses, unitList)
+    if (sim.ok && sim.energy != null) {
+      const resources = await getWalletResources(operator)
+      const energyFeeSun = resources?.energyFeeSun ?? ENERGY_PRICE_SUN
+      sendFeeLimit = Math.max(sendFeeLimit, feeLimitFromEnergy(sim.energy, energyFeeSun))
+      if (resources) {
+        const assessment = assessResources({
+          energyRequired: sim.energy,
+          recipientCount: batch.length,
+          feeLimitSun: sendFeeLimit,
+          resources,
+          bandwidth: {
+            base: BANDWIDTH_BASE_BYTES,
+            perRecipient: BANDWIDTH_PER_RECIPIENT_BYTES,
+          },
+        })
+        if (assessment.verdict === "insufficient") {
+          const err = new PurserError(
+            "unknown",
+            `Not enough resources for this batch — it needs about ${assessment.energyRequired.toLocaleString(
+              "en-US"
+            )} energy (~${assessment.trxNeeded} TRX in fees) and your wallet is short. Rent energy or ` +
+              `top up TRX, then try again. No payment was sent.`,
+            "insufficient_resources_measured"
+          )
+          events.onBatchFailed?.(b, totalBatches, rowIds, err)
+          outcome.failure = { batchIndex: b, error: err }
+          return outcome
+        }
+      }
+    }
 
     events.onBatchSigning?.(b, totalBatches, rowIds)
 
@@ -260,10 +348,10 @@ export async function runDisperse(
       txid = await disperseContract(tw)
         .disperse(
           USDT_ADDRESS,
-          batch.map((r) => r.address),
-          batch.map((r) => r.units.toString())
+          addresses,
+          unitList.map((u) => u.toString())
         )
-        .send({ feeLimit: feeLimitForBatch(batch.length) })
+        .send({ feeLimit: sendFeeLimit })
     } catch (e) {
       const err = humanize(e)
       events.onBatchFailed?.(b, totalBatches, rowIds, err)

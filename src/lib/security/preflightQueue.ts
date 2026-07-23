@@ -42,6 +42,21 @@ export type ThrottledQueueOptions = {
   onBatch?: (entries: Array<[string, QueueBlacklistStatus]>) => void
 }
 
+/** Reads a batch of addresses to any per-address payload `T` (the generic form of
+ *  BatchBlacklistReader). Must resolve; a whole-batch throw is caught by the queue. */
+export type BatchReader<T> = (addresses: string[]) => Promise<Array<[string, T]>>
+
+export type ThrottledReadsOptions<T> = {
+  batchSize?: number
+  intervalMs?: number
+  sleep?: (ms: number) => Promise<void>
+  isCancelled?: () => boolean
+  onBatch?: (entries: Array<[string, T]>) => void
+  /** D-7 fail-safe: the value assigned to EVERY address in a whole-batch throw. MUST be the
+   *  non-safe / unknown bucket for its signal (e.g. "UNVERIFIED" for blacklist, `null` holding). */
+  fallback: (address: string) => T
+}
+
 /** Batch cap — never read more than this many addresses per round-trip (rate-limit safety). */
 const MAX_BATCH = 10
 /** Default gap between sequential batches (ms) — one batch per second. */
@@ -51,20 +66,19 @@ const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
- * Read the blacklist status of `addresses` in throttled, sequential, cancelable batches.
+ * Generic throttled, sequential, cancelable batch reader (the shared engine).
  *
  * - Dedupes to unique, non-blank addresses (one read per wallet).
- * - Emits each batch's `[address, status]` entries via `onBatch` as they resolve (so rows can flip
- *   out of "Verifying…" incrementally), UNLESS cancelled.
- * - A whole-batch read failure → every address in that batch emitted as UNVERIFIED (D-7).
+ * - Emits each batch's `[address, T]` entries via `onBatch` as they resolve, UNLESS cancelled.
+ * - A whole-batch read failure → every address in that batch emitted as `fallback(address)` (D-7).
  * - Between batches, awaits `sleep(intervalMs)` — the throttle. No sleep after the last batch.
  *
  * Resolves when every batch has completed or the run was cancelled. Never rejects.
  */
-export async function runThrottledBlacklist(
+export async function runThrottledReads<T>(
   addresses: readonly string[],
-  read: BatchBlacklistReader,
-  opts: ThrottledQueueOptions = {}
+  read: BatchReader<T>,
+  opts: ThrottledReadsOptions<T>
 ): Promise<void> {
   const unique = [
     ...new Set(
@@ -83,12 +97,12 @@ export async function runThrottledBlacklist(
     if (isCancelled()) return
 
     const batch = unique.slice(i, i + size)
-    let entries: Array<[string, QueueBlacklistStatus]>
+    let entries: Array<[string, T]>
     try {
       entries = await read(batch)
     } catch {
-      // D-7: a whole-batch/action-level failure leaves NOTHING safe — every address UNVERIFIED.
-      entries = batch.map((a) => [a, "UNVERIFIED"] as [string, QueueBlacklistStatus])
+      // D-7: a whole-batch/action-level failure leaves NOTHING safe — every address to the fallback.
+      entries = batch.map((a) => [a, opts.fallback(a)] as [string, T])
     }
 
     // Roster changed WHILE this batch was in flight → discard these results, never apply them.
@@ -98,4 +112,20 @@ export async function runThrottledBlacklist(
     // Throttle: pause before the next batch (not after the last).
     if (i + size < unique.length) await sleep(intervalMs)
   }
+}
+
+/**
+ * Read the blacklist status of `addresses` in throttled, sequential, cancelable batches — the
+ * blacklist-typed specialization of runThrottledReads (D-7 fallback = UNVERIFIED). Signature and
+ * behavior unchanged; the frozen-read path is untouched.
+ */
+export async function runThrottledBlacklist(
+  addresses: readonly string[],
+  read: BatchBlacklistReader,
+  opts: ThrottledQueueOptions = {}
+): Promise<void> {
+  return runThrottledReads<QueueBlacklistStatus>(addresses, read, {
+    ...opts,
+    fallback: () => "UNVERIFIED",
+  })
 }

@@ -174,48 +174,74 @@ export const USDT_DECIMALS = 6
  *  signing boundary, never a partial-pay boundary. */
 export const BATCH_CAP = 100
 
-// --- feeLimit sizing --------------------------------------------------------
-// ⚠ OPEN BLOCKER — PENDING MAINNET RE-MEASUREMENT AGAINST THE GUARDED CONTRACT (see the blocker
-// at the TOP of sprint_report.txt). These constants were mainnet-measured (2026-07-14) by
-// CONSTANT-CALL SIMULATION (triggerConstantContract — no signature, no spend) with FRESH recipients
-// (never held USDT), but against the NOW-SUPERSEDED PRE-GUARD contract
-// TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha (historical — that address is deprecated). The S-1 guarded
-// contract now live at TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm adds a per-recipient Tether blacklist read
-// (getBlackListStatus), so real per-row energy is HIGHER than these pre-guard numbers. Re-measure
-// against TH6TV… + real Tether (TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t) BEFORE any real customer batch —
-// shipping these under-sizes feeLimit and risks the exact OUT_OF_ENERGY revert (on a payroll, not a
-// deploy). Do NOT trust these constants for the guarded contract yet.
-// See scripts/tron/measure-mainnet.cjs and docs/06 §6. LINEAR FIT residual 0.0% on N=2/3/5 —
-// the BASE + PER·N model holds exactly:
-//   ENERGY_PER_RECIPIENT_FRESH = 157,000  (marginal per fresh recipient)
-//   ENERGY_BASE                =   3,100  (per-tx overhead)
+// --- feeLimit sizing + resource pre-check constants --------------------------
+// TWO-LAYER MODEL (Sprint: toolbar resource pre-check). These constants ORIENT — they drive the
+// reactive dashboard "can this wallet afford the batch" line and the all-fresh feeLimit floor. The
+// AUTHORITATIVE figure at pay time is a live triggerConstantContract SIMULATION of the real batch
+// (src/lib/tron/disperse.ts → simulateDisperseEnergy), which sizes the actual fee_limit AND gates
+// the send. Constant to orient, measurement to gate — so a stale constant can never produce a false
+// "you're covered" (the dynamic-energy / upgrade risk noted at the bottom).
 //
-// ⚠ NILE'S MOCK/TESTNET USDT WAS NOT REPRESENTATIVE of mainnet Tether — a 3.9× MISS: the Nile
-// rehearsal read ~36,925/recipient, mainnet reads ~157,000. Never calibrate energy from testnet.
-// With the old Nile constant (40,000), the feeLimit budgeted for one fresh recipient (64,568
-// energy) was already well under the REAL single-recipient cost (159,946). The 50 TRX floor
-// masked it for the smallest batches (N≤3 survived), but a real payroll to 4+ FRESH (virgin)
-// wallets would have died OUT_OF_ENERGY (e.g. N=4 real 63 TRX > old feeLimit 50 TRX floor).
-// Fresh is the worst case AND the real case (a new affiliate's wallet is virgin); fresh/existing
-// ≈ 1.72× (fresh N=3 = 473,747 energy vs existing holders = 275,747), so we size against fresh.
+// PROVENANCE + OPEN FOLLOW-UP. These were mainnet-measured (2026-07-14) by CONSTANT-CALL SIMULATION
+// (triggerConstantContract — no signature, no spend) against the NOW-DEPRECATED PRE-GUARD contract
+// TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha. The S-1 guarded contract now live at
+// TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm adds a per-recipient Tether blacklist read (getBlackListStatus).
+// N-1 MEASURED that guard delta on Nile: ~+1,100 energy/row (+3%) — a fixed staticcall+SLOAD, <1% of
+// the 157,000/recipient and trivially inside the 1.5× FEE_MARGIN. So these mainnet constants are
+// ACCEPTED AS SAFE-BY-MARGIN for now (owner decision — build the pre-check on them, don't block on a
+// re-measure). A fresh guarded-contract re-measurement (scripts/tron/measure-mainnet.cjs against
+// TH6TV… + real Tether, needing a funded measure wallet + a one-time owner approve) remains an OPEN
+// FOLLOW-UP — and the pay-time simulation is the live safety net until then. See docs/06 §6 + the
+// blocker atop sprint_report.txt.
 //
-// feeLimit is a CEILING, not a charge — the tx burns only what it uses, so over-provisioning
-// costs nothing while under-provisioning kills a payroll. At BATCH_CAP=100, feeLimit ≈ 2,355 TRX
-// (well under the 15,000 TRX protocol max). Re-verify against a REAL receipt the first mainnet
-// batch: getAllowDynamicEnergy=1 on mainnet, so per-contract energy can rise with usage. docs/06 §6.
-export const ENERGY_BASE = 3_100 // MAINNET: per-tx overhead (measured 2026-07-14)
+// LINEAR FIT residual 0.0% on N=2/3/5 — the BASE + PER·N model holds exactly:
+//   ENERGY_PER_RECIPIENT_FRESH    = 157,000  (marginal per FRESH recipient — never held USDT)
+//   ENERGY_PER_RECIPIENT_EXISTING =  91,000  (marginal per EXISTING holder; derived from the SAME
+//                                             2026-07-14 reading: existing N=3 = 275,747 energy →
+//                                             (275,747−3,100)/3 ≈ 90,882, rounded up. fresh/existing
+//                                             ≈ 1.72×, matching the recorded ratio)
+//   ENERGY_BASE                   =   3,100  (per-tx overhead)
+//
+// ⚠ NILE'S MOCK/TESTNET USDT WAS NOT REPRESENTATIVE of mainnet Tether — a 3.9× MISS (Nile rehearsal
+// ~36,925/recipient vs mainnet 157,000). Never calibrate energy from testnet; that is why both the
+// original calibration AND the pay-time gate simulate against the LIVE mainnet contract.
+//
+// feeLimit is a CEILING, not a charge — the tx burns only what it uses, so over-provisioning costs
+// nothing while under-provisioning kills a payroll. feeLimitForBatch sizes the all-fresh worst case
+// (the floor); feeLimitFromEnergy sizes from a live measurement (the pay-time override). At
+// BATCH_CAP=100 all-fresh, feeLimit ≈ 2,355 TRX (well under the 15,000 TRX protocol max).
+// getAllowDynamicEnergy=1 on mainnet, so per-contract energy can rise with usage — which is exactly
+// why the pay-time simulation, not the constant, has the final word.
+export const ENERGY_BASE = 3_100 // MAINNET: per-tx overhead (measured 2026-07-14, pre-guard; +guard <1%)
 export const ENERGY_PER_RECIPIENT_FRESH = 157_000 // MAINNET: fresh recipient (measured; Nile was 3.9× too low)
-export const ENERGY_PRICE_SUN = 100 // mainnet getEnergyFee (sun/energy) at calibration — a governance param; re-check
-export const FEE_MARGIN = 1.5 // headroom over the fresh estimate
+export const ENERGY_PER_RECIPIENT_EXISTING = 91_000 // MAINNET: existing USDT holder (derived; fresh/existing ≈ 1.72×)
+export const ENERGY_PRICE_SUN = 100 // mainnet getEnergyFee (sun/energy) at calibration — a governance param; the pre-check reads it LIVE
+export const FEE_MARGIN = 1.5 // headroom over the energy estimate
 export const FEE_FLOOR_SUN = 50_000_000 // 50 TRX floor for tiny batches
 export const SUN_PER_TRX = 1_000_000
 
-/** Safe feeLimit (in sun) for a disperse of `recipientCount` recipients,
- *  sized against the all-fresh worst case with margin. Always well under the
- *  15,000 TRX network max. */
+// Bandwidth (tx-size) model for the resource pre-check — analytical, NOT a live measurement.
+// disperse(address,address[],uint256[]) ABI-encodes to 196 + 64·N calldata bytes; add the tx
+// envelope (~90 B) + signature (~66 B). Rounded up (bandwidth is a small cost — a few TRX even at
+// 100 recipients — and over-provisioning is safe). Re-verify against the first real mainnet receipt.
+export const BANDWIDTH_BASE_BYTES = 400 // per-tx overhead (envelope + fixed calldata), rounded up
+export const BANDWIDTH_PER_RECIPIENT_BYTES = 66 // 64 B ABI (address + amount slots) + margin
+
+/** Safe feeLimit (in sun) for a disperse of `recipientCount` recipients, sized against the
+ *  all-fresh worst case with margin — the FLOOR/default. The pay-time path may raise it from a
+ *  live measurement (feeLimitFromEnergy). Always well under the 15,000 TRX network max. */
 export function feeLimitForBatch(recipientCount: number): number {
   const energy = ENERGY_BASE + ENERGY_PER_RECIPIENT_FRESH * recipientCount
   const sun = Math.ceil(energy * FEE_MARGIN) * ENERGY_PRICE_SUN
+  return Math.max(sun, FEE_FLOOR_SUN)
+}
+
+/** feeLimit (in sun) sized from a MEASURED energy figure — a live triggerConstantContract
+ *  simulation of the real batch — at the LIVE energyFee. This is the pay-time override that keeps
+ *  the ceiling above the real current cost even when the static constant has drifted low (dynamic
+ *  energy / upgrades). `energyFeeSun` is read live (getEnergyFee), never the hardcoded 100. */
+export function feeLimitFromEnergy(energy: number, energyFeeSun: number): number {
+  const sun = Math.ceil(energy * FEE_MARGIN) * Math.max(1, Math.round(energyFeeSun))
   return Math.max(sun, FEE_FLOOR_SUN)
 }
 

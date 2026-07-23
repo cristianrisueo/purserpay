@@ -115,6 +115,7 @@ export function Dashboard() {
                 paying={payout.paying}
                 verifying={payout.verifying}
                 canPayAll={payout.canPayAll}
+                resourceStatus={payout.resourceStatus}
                 freeMode={payout.freeMode}
                 batchPhase={payout.batchPhase}
                 payError={payout.payError}

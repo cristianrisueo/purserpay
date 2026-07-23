@@ -12,6 +12,7 @@ import { DISPERSE_SELECTOR, parseDisperseCall } from "./disperseCalldata"
 import {
   readBlacklistStatuses,
   type BlacklistStatus,
+  type PreflightCell,
 } from "../security/blacklist"
 
 // Server-side, KEYLESS TRON reads for the payout authorization gate.
@@ -156,6 +157,65 @@ export async function readDestinationBlacklist(
   addresses: string[]
 ): Promise<Map<string, BlacklistStatus>> {
   return readBlacklistStatuses(addresses, readBlacklistOnce)
+}
+
+/**
+ * Read USDT's `balanceOf(dest)` for ONE address over the keyless server node — the resource
+ * pre-check's fresh-vs-holder signal. Resolves true (holds > 0 → cheaper existing-holder energy) /
+ * false (holds 0 → the expensive fresh storage write); THROWS on any failed/empty read so the caller
+ * maps it to `null` (unknown → treated as FRESH, the worst case — the estimate never under-sizes
+ * energy). A constant-call: nothing signed, no key, no funds move — non-custodial untouched.
+ */
+async function readUsdtHoldsOnce(dest: string): Promise<boolean> {
+  const tw = serverClient()
+  const res = (await tw.transactionBuilder.triggerConstantContract(
+    USDT_ADDRESS,
+    "balanceOf(address)",
+    {},
+    [{ type: "address", value: dest }],
+    dest
+  )) as { result?: { result?: boolean }; constant_result?: string[] }
+
+  if (!res?.result?.result) throw new Error("balance read failed")
+  const hex = res.constant_result?.[0]
+  if (!hex) throw new Error("balance read empty")
+  return BigInt("0x" + hex) > 0n
+}
+
+/**
+ * The COMBINED payout pre-flight read (Sprint: toolbar resource pre-check): per address, its USDT
+ * frozen status (SAFE/FROZEN/UNVERIFIED, fail-safe per D-7) AND whether it currently holds USDT (for
+ * the fresh-vs-holder energy estimate). Reuses the pure, fail-safe frozen reader VERBATIM
+ * (readDestinationBlacklist) — the safety-critical path is untouched — and adds a bounded-concurrency
+ * holding pass; a holding read that fails → `null` (unknown → the caller treats it as FRESH). One
+ * server-side API-keyed round-trip carries both signals so the client queue reads each address once.
+ * Reads only — non-custodial untouched.
+ */
+export async function readDestinationPreflight(
+  addresses: string[]
+): Promise<Array<[string, PreflightCell]>> {
+  const frozen = await readDestinationBlacklist(addresses)
+  const unique = [...frozen.keys()]
+
+  const holds = new Map<string, boolean | null>()
+  const CONCURRENCY = 8
+  for (let i = 0; i < unique.length; i += CONCURRENCY) {
+    const chunk = unique.slice(i, i + CONCURRENCY)
+    await Promise.all(
+      chunk.map(async (address) => {
+        try {
+          holds.set(address, await readUsdtHoldsOnce(address))
+        } catch {
+          holds.set(address, null) // unknown → the resource estimate treats it as FRESH
+        }
+      })
+    )
+  }
+
+  return unique.map((address) => [
+    address,
+    { frozen: frozen.get(address) ?? "UNVERIFIED", holdsUsdt: holds.get(address) ?? null },
+  ])
 }
 
 /**

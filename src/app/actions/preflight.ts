@@ -14,8 +14,11 @@
 // read must never render green. The on-chain guard (disperse reverts a frozen destination)
 // remains the real guarantee at sign time; this only ever advises.
 
-import type { BlacklistStatus } from "@/lib/security/blacklist"
-import { readDestinationBlacklist } from "@/lib/tron/serverRead"
+import type { BlacklistStatus, PreflightCell } from "@/lib/security/blacklist"
+import {
+  readDestinationBlacklist,
+  readDestinationPreflight,
+} from "@/lib/tron/serverRead"
 
 /**
  * Read USDT's blacklist status for a payout batch's addresses (the payer + every recipient),
@@ -23,10 +26,26 @@ import { readDestinationBlacklist } from "@/lib/tron/serverRead"
  * structured-clone serializable across the Server Action boundary; the client rebuilds a Map
  * and feeds it to the pure `previewBatch`. Dedup + bounded concurrency + the D-7 fail-safe all
  * live in `readDestinationBlacklist` / `readBlacklistStatuses`; this adds nothing but the seam.
+ *
+ * Still used at PAY TIME (frozen-only re-confirm) — the eager roster pass uses readBatchPreflight
+ * below, which also carries the resource pre-check's fresh-vs-holder signal.
  */
 export async function readBatchBlacklist(
   addresses: string[]
 ): Promise<Array<[string, BlacklistStatus]>> {
   const statuses = await readDestinationBlacklist(addresses)
   return [...statuses.entries()]
+}
+
+/**
+ * The COMBINED eager pre-flight read (Sprint: toolbar resource pre-check): each address's frozen
+ * status AND whether it holds USDT, in one server round-trip per batch. Same server-only seam +
+ * TRON_PRO_API_KEY as readBatchBlacklist — the browser never sees the key or the read client. The
+ * `holdsUsdt` half feeds the fresh-vs-holder energy estimate (null = unknown → treated as FRESH).
+ * Already serialization-safe (strings / booleans / null). See docs/03.
+ */
+export async function readBatchPreflight(
+  addresses: string[]
+): Promise<Array<[string, PreflightCell]>> {
+  return readDestinationPreflight(addresses)
 }

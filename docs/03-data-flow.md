@@ -179,7 +179,9 @@ owner-CLOSED** (encoded in `src/lib/security/preflightView.ts`, asserted in
 
 **Timing & wiring (`usePayout.ts`, UX-1).** The blacklist read is a rate-limited round-trip, so it
 runs **EAGERLY when rows enter the roster** (load / add-payee / CSV import) behind a **throttled,
-cancelable queue** (`runThrottledBlacklist`, `preflightQueue.ts`) — **sequential batches of ≤10,
+cancelable queue** (`runThrottledReads`, `preflightQueue.ts`; the frozen read now shares this queue
+with the resource pre-check's USDT-holding read — one combined round-trip per batch, see §3c) —
+**sequential batches of ≤10,
 one per second** (a safe margin under TronGrid's ~15/s), so a whole roster resolves without tripping
 the limit. Rows awaiting their turn show the neutral **Verifying…** state (never a resolved badge).
 The queue is **cancelable / roster-keyed**: a generation token (`eagerGenRef`) is bumped on every
@@ -193,6 +195,45 @@ address UNVERIFIED, never SAFE. Exchange classification stays pure/instant (ambe
 surface on every roster change). Readings **accumulate per address**. The **`--warning` amber token**
 (`globals.css`) exists solely for the exchange advisory — distinct from error-red (frozen/sanctioned)
 and success-green (**reserved for paid**). All of this is **reads only** — non-custodial is untouched.
+
+## 3c. Resource pre-check — can the wallet AFFORD the batch (energy / bandwidth / TRX)
+
+Separate from the frozen/exchange pre-flight (which asks *"is this address safe?"*), the resource
+pre-check asks *"can this wallet pay the on-chain fees?"* — because `disperse` is **all-or-nothing**,
+a batch that reverts `OUT_OF_ENERGY` burns the payer's TRX and pays **nobody**. Two layers —
+**constant to orient, measurement to gate**:
+
+- **Orient (reactive toolbar).** On every selection change, a pure, node-tested estimate
+  (`src/lib/security/resourceCheck.ts`) sizes required **energy** (base + per-recipient, split
+  **fresh vs existing USDT holder** — the holding read below; unknown → FRESH, worst case) and
+  **bandwidth** (analytical tx-size model), and compares them against the operator's **live**
+  resources — energy / bandwidth / TRX + live `getEnergyFee` / `getTransactionFee`, read once per
+  wallet-lifecycle event through the injected provider (`src/lib/tron/resources.ts`, mirroring
+  `getUsdtBalance`). `fee_limit` is treated correctly as the tx's **total-energy ceiling**
+  (`fee_limit ÷ energyFee`), NOT a TRX-burn cap; rented energy lowers the burn, never the ceiling.
+  Verdict: **sufficient** (quiet neutral line, Pay all enabled) · **insufficient** (Pay all
+  **disabled**, the exact energy/TRX gap + a neutral third-party energy-comparator link) ·
+  **unknown** (resources unreadable → honest warning, Pay all **stays enabled** — never block on
+  missing data). Rendered in `PayoutControls` (`ResourceLine`); gates `canPayAll` only on a
+  **conclusive** insufficient. Green is never used (paid-only); a hard block is red (amber is
+  advisory-only, never a block).
+- **Gate (authoritative, pay time).** The static energy constant is a snapshot — TRON's dynamic
+  energy (`getAllowDynamicEnergy=1`) and protocol/USDT upgrades can raise the real cost, and a
+  stale-low constant would produce a false "you're covered". So inside `runDisperse`, **after
+  `ensureAllowance` and before each chunk's `.send()`** (the point where the standing allowance makes
+  the simulation faithful), `simulateDisperseEnergy` runs a live `triggerConstantContract` of the
+  real batch and reads back `energy_used`. That measured figure **sizes the actual `fee_limit`**
+  (`feeLimitFromEnergy`, at the live `energyFee`) and, if the freshly-read wallet can't afford it,
+  **blocks with the real number before any signature**. Simulation unavailable → fall back to the
+  constant-sized `feeLimitForBatch`, never a false block.
+
+**The fresh-vs-holder holding read.** The eager pre-flight queue (§3b-i) reads **two** signals per
+address in **one** combined server round-trip (`readBatchPreflight` → `readDestinationPreflight`,
+same server-only `TRON_PRO_API_KEY` seam as the frozen read): the frozen status **and** whether the
+address currently holds USDT (`balanceOf > 0`), over the shared `runThrottledReads` throttle. Holding
+tells a fresh recipient (the expensive new-storage write, ~157k energy) from an existing holder
+(~1.72× cheaper); a failed/unknown holding read → **FRESH** (worst case), so the estimate never
+under-sizes. All reads only — non-custodial untouched.
 
 ## 4. The payout pipeline — the 3-gate choke-point
 
@@ -258,9 +299,13 @@ Gate specifics (all in `usePayout.ts` → `preflightThenPay` then `executePayout
   - **Free tier** — reached only with no subscription and no credit. `count > 1` → `402
     FREE_TIER_BATCH_LIMIT`; `count === 1` → an ATOMIC quota consume (`200` authorized, or
     `402 FREE_TIER_COOLDOWN`). Consumed OPTIMISTICALLY, before broadcast.
-- **Gate 3 — disperse.** Only reached on a `200`. Runs `runDisperse` (§5). On a free-mode
-  failure/rejection the client calls `POST /api/payout/release` to restore the slot (the
-  server re-verifies the txid on-chain; never trusts the client). See [`07`](./07-freemium-gate.md).
+- **Gate 3 — disperse.** Only reached on a `200`. Runs `runDisperse` (§5), which also carries the
+  **authoritative resource gate** (§3c): before each chunk's signature it simulates the real batch,
+  sizes the `fee_limit` from the measured energy, and **blocks with the real number** if the wallet
+  can't afford it — the last line of defence against an `OUT_OF_ENERGY`-that-pays-nobody. On a
+  free-mode failure/rejection (including this energy block) the client calls `POST /api/payout/release`
+  to restore the slot (the server re-verifies the txid on-chain; never trusts the client). See
+  [`07`](./07-freemium-gate.md).
 
 The roster still **never leaves the device**: the authorize route receives only the payer
 address, the recipient count, and the recipient addresses OFAC already required — never

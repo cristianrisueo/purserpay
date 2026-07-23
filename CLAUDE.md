@@ -461,6 +461,28 @@ pass) is the only open item, now **unblocked** (the port is verified 1:1).
   **last 6 chars** (anti clipboard-malware). Pure decision logic in `src/lib/security/preflightView.ts`
   + `preflightQueue.ts` (node-tested); UI in `columns.tsx` · `VerifyBadge.tsx` · `PreflightBanner.tsx`
   · `ExchangeConfirmDialog.tsx` · `PayeeFormDialog.tsx`. Still reads only — non-custodial untouched.
+- **Resource pre-check (toolbar) — can the wallet AFFORD the batch before signing.** Because
+  `disperse` is all-or-nothing, an `OUT_OF_ENERGY` revert burns the payer's TRX and pays **nobody**.
+  A live pre-check in the payout toolbar (next to "N selected · X USDT") answers "can this wallet pay
+  the on-chain fees (energy + bandwidth + TRX)?" — **constant to orient, measurement to gate**. The
+  **reactive** layer (`src/lib/security/resourceCheck.ts`, node-tested; rendered by `ResourceLine` in
+  `PayoutControls.tsx`) estimates required energy from the mainnet constants — split **fresh vs
+  existing USDT holder** via a per-recipient `balanceOf` read folded into the eager pre-flight queue
+  (unknown → FRESH, worst case) — plus a bandwidth model, and compares against the operator's **live**
+  energy/bandwidth/TRX + live `getEnergyFee`/`getTransactionFee` (read through the injected provider,
+  `src/lib/tron/resources.ts`). `fee_limit` is the tx's **total-energy ceiling** (`÷ energyFee`), NOT
+  a TRX-burn cap; rented energy lowers the burn, never the ceiling. Verdicts: **sufficient** (quiet
+  neutral line, Pay all enabled) · **insufficient** (Pay all **disabled** + exact gap + a neutral
+  third-party comparator link; gates `canPayAll`) · **unknown** (honest warning, **never blocks** —
+  never on missing data). The **authoritative** layer is a pay-time `triggerConstantContract`
+  simulation of the real batch inside `runDisperse` (`simulateDisperseEnergy`, after `ensureAllowance`,
+  before each `.send()`): it sizes the real `fee_limit` from the measured energy (`feeLimitFromEnergy`)
+  and blocks with the real number if the wallet can't cover it — so a stale constant can never cause
+  the burn. **GREEN is never used here** (paid-only); a hard block is **red** (amber stays advisory-
+  only). **Phase-1 note:** the mainnet energy recalibration against the guarded contract stays an
+  **open follow-up** (owner-accepted the current constants as safe-by-margin — see docs/06 §6); the
+  added `ENERGY_PER_RECIPIENT_EXISTING = 91,000` is **derived** from the recorded 2026-07-14 reading,
+  not a new measurement. Reads + the operator's own signature only — non-custodial untouched. (docs/03 §3c.)
 - A payee is **name + address + amount** — nothing else decides a payout. The decorative **`role`
   field was removed (ROLE-1)** from the data model, the CSV importer, the payout table, the add/edit
   form, and the UX-3 conflict dialog; it never affected the money path. The Dexie schema is at **v3**:

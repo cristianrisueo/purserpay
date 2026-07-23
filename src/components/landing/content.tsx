@@ -70,15 +70,22 @@ export type HeroBenefit = {
   body: string
 }
 
-// The five benefits shown as an aqua ✓✓ checklist in the hero (HERO-1 revision). FIDELITY RULE
+// The six benefits shown as an aqua ✓✓ checklist in the hero (HERO-1 revision). FIDELITY RULE
 // (owner-enforced): every claim maps to a feature the app SHIPS today — the pre-flight address
-// checks (S-1/S-3), the device-local Dexie roster + one-button wipe, the self-declared PII taken
-// at pay time, the affiliate receipt portal (view/PDF/on-chain verify) plus the dashboard record,
-// and the flat on-chain subscription with no volume cut. Copy is owner-approved, verbatim.
+// checks (S-1/S-3), the wallet resource pre-check (reads live energy/bandwidth/TRX and locks Pay
+// all when the batch is unaffordable — resourceCheck.ts + docs/03 §3c), the device-local Dexie
+// roster + one-button wipe, the self-declared PII taken at pay time, the affiliate receipt portal
+// (view/PDF/on-chain verify) plus the dashboard record, and the flat on-chain subscription with no
+// volume cut. The pre-check bullet sits in the safety cluster (right after "safe by default").
+// Copy is owner-approved, verbatim.
 export const heroBenefits: HeroBenefit[] = [
   {
     title: "Your payouts are safe by default.",
     body: "Before you sign, we check every address for Tether-frozen wallets, duplicate entries, exchange-deposit addresses, and invalid formats.",
+  },
+  {
+    title: "We check you can afford it before you sign.",
+    body: "PurserPay reads your wallet's live resources and works out exactly what the batch needs. If you're short, the pay button locks and tells you the number — no burned fees on a transfer that was never going to go through.",
   },
   {
     title: "Everything stays in your browser.",
@@ -117,7 +124,7 @@ export const modules: Module[] = [
     n: "01",
     eyebrow: "built to be safe",
     title: "Security and simplicity.",
-    body: "Four on-chain defenses stand between a mistake and your money — an address that doesn't exist, a wallet Tether has frozen, a half-finished batch. You never see the machinery. You see one button; the contract does the rest.",
+    body: "Four checks stand between a mistake and your money — an address that doesn't exist, a wallet Tether has frozen, a batch your wallet can't afford. Some run in your browser before you sign; one is enforced on-chain by the contract itself. You see one button; the machinery does the rest.",
     variant: "defenses",
   },
   {
@@ -142,16 +149,19 @@ export const modules: Module[] = [
   },
 ]
 
-// --- Module 01's four on-chain defenses (#how, 2×2 grid) --------------------
+// --- Module 01's four checks (#how, 2×2 grid) -------------------------------
 // DefenseCards.tsx renders these in a 2×2 grid: the two address checks (live, paid-before —
-// the aqua ✓/✓✓ idiom) on the left, the two contract-level guards (frozen-guard, atomic) on
-// the right. Fidelity (owner-enforced): every claim maps to a shipped defense — the ✓/✓✓
-// double-check (validation.ts), the S-1 on-chain frozen-destination revert (DestinationBlacklisted,
-// live+verified on nile; mainnet redeploy pending S-4), and the atomic all-or-none disperse.
-// Order here is DOM order (A,B,C,D); the grid places C — the strongest, the only unfalsifiable
-// on-chain require — top-right as the first visual focus. GREEN is NOT used here (paid-only rule).
+// the aqua ✓/✓✓ idiom) on the left; on the right, the ON-CHAIN frozen-wallet guard (the focal
+// card) over the OFF-CHAIN resource pre-check. NOT all four are on-chain — only the frozen guard
+// is (the module body says so); the others are browser/node pre-flight reads. Fidelity
+// (owner-enforced): every claim maps to a shipped check — the ✓/✓✓ double-check (validation.ts),
+// the S-1 on-chain frozen-destination revert (DestinationBlacklisted, live on both networks), and
+// the wallet resource pre-check (resourceCheck.ts — reads live energy/bandwidth/TRX and locks Pay
+// all when the batch is unaffordable; docs/03 §3c). Order here is DOM order (A,B,C,D); the grid
+// places C — the strongest, the only unfalsifiable on-chain require — top-right as the first visual
+// focus. GREEN is NOT used here (paid-only rule).
 export type DefenseCard = {
-  id: "live" | "paid-before" | "frozen-guard" | "atomic"
+  id: "live" | "paid-before" | "frozen-guard" | "resource-precheck"
   title: string
   body: string
 }
@@ -173,9 +183,9 @@ export const defenseCards: DefenseCard[] = [
     body: "Before every payment, the contract checks on-chain whether Tether has frozen the destination. If it has, the transaction reverts and nothing moves. Funds sent to a frozen wallet are effectively lost — recovery runs around 3.6%. This isn't a warning; it's an on-chain require the money cannot cross.",
   },
   {
-    id: "atomic",
-    title: "All-or-nothing",
-    body: "A batch either settles in full or not at all. One bad row reverts the entire transaction — you never end up with half a payroll paid and the rest in limbo. A problem address means zero damage, not an irreparable partial send.",
+    id: "resource-precheck",
+    title: "Resource pre-check",
+    body: "Before you sign, PurserPay reads your wallet's live energy, bandwidth and TRX and compares them against what this exact batch requires. If you're short, the pay button locks and shows you the gap — so you never burn fees on a transfer that reverts.",
   },
 ]
 

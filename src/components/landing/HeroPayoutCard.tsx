@@ -10,14 +10,17 @@ import { demoRecipients, demoTotal, type Recipient } from "./content"
 // (✓✓ green), and clean "Valid on TRON" rows (✓ aqua). GREEN = PAID only. No client state, no
 // animation — a snapshot of the review state, safe to server-render.
 //
-// The frozen row is rendered UNCHECKED (an operator excludes a blocked row) so "Pay all" stays
-// legitimately active over the three clean rows (blockedCount + the selected sum are computed over
-// SELECTED rows in usePayout.ts). The "Before you pay" strip COMPOSITES every category the live
-// PreflightBanner can produce into one showcase frame — the red frozen line first (severity:
-// blocking > advisory), then the amber exchange advisory — each string verbatim from
-// PreflightBanner.tsx. (The live banner is selected-only, so with the frozen row unchecked it would
-// drop the red line; the hero deliberately shows it — the same "show every state at once" composite
-// that already crams four row states into one card. The frozen row keeps its red inline badge too.)
+// The frozen row is rendered UNCHECKED (an operator excludes a blocked row), so the frozen guard
+// isn't what locks the batch here — the RESOURCE PRE-CHECK is. The footer shows that pre-check in its
+// INSUFFICIENT state (the wallet holds the USDT but not the energy/bandwidth/TRX for the fees), so —
+// exactly as the app's ResourceLine + PayoutControls do — the "Balance covers all N" line gives way
+// to the energy shortfall (red, verbatim) and "Pay all" renders DISABLED. A live CTA next to a
+// blocking error would misrepresent the product. The "Before you pay" strip still COMPOSITES every
+// category the live PreflightBanner can produce — the red frozen line first (severity: blocking >
+// advisory), then the amber exchange advisory — each string verbatim from PreflightBanner.tsx. (The
+// live banner is selected-only, so with the frozen row unchecked it would drop the red line; the hero
+// deliberately shows it — the same "show every state at once" composite that crams four row states
+// into one card. The frozen row keeps its red inline badge too.)
 export function HeroPayoutCard() {
   // Dynamic count straight from the roster mock, so the copy pluralizes exactly like the live
   // PreflightBanner (1 → "it", N → "them"). Today the roster carries a single frozen row (Aaron).
@@ -119,7 +122,11 @@ export function HeroPayoutCard() {
         )
       })}
 
-      {/* footer — the controls summary + a single Pay all, exactly as the dashboard renders it */}
+      {/* footer — the controls summary + Pay all, exactly as the dashboard renders it. The resource
+          pre-check is shown in its INSUFFICIENT state, so — just like the app's ResourceLine — the
+          "Balance covers all N" line gives way to the energy shortfall (red, verbatim from
+          PayoutControls) and Pay all LOCKS (disabled). The wallet has the USDT (1,300) but not the
+          energy for fees; USDT balance and on-chain resources are separate. */}
       <div className="flex items-center justify-between gap-3 bg-[#FCFBFA] px-5 py-4">
         <span className="min-w-0 text-[13px] text-muted-foreground">
           <b className="text-foreground">3 selected</b> · {demoTotal} USDT

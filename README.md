@@ -101,6 +101,12 @@ action, zero fear, beauty = trust.
   (`src/hooks/usePayout.ts`), in this order: an advisory **pre-flight** (frozen/exchange
   preview) → **wallet-control proof** → **OFAC** → **entitlement (subscription or referral
   credit) / free-tier** → **disperse**. See [`docs/03`](./docs/03-data-flow.md) §4.
+- A **resource pre-check** in the payout toolbar asks *can this wallet afford the batch's on-chain
+  fees (energy + bandwidth + TRX)?* before signing — because `disperse` is all-or-nothing, an
+  `OUT_OF_ENERGY` revert burns the payer's TRX and pays nobody. **Constant to orient** (a reactive,
+  fresh-vs-holder estimate that disables Pay all on a conclusive shortfall), **measurement to gate**
+  (a live `triggerConstantContract` simulation at pay time sizes the real `fee_limit` and blocks an
+  unaffordable batch). See [`docs/03`](./docs/03-data-flow.md) §3c.
 
 - The payee **affiliate portal** `/portal` is client-only (`ssr:false`) too — a payee proves
   wallet control with one signature and sees their disperse-anchored receipts

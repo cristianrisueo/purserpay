@@ -341,6 +341,24 @@ Enabling mainnet is more than setting `NEXT_PUBLIC_TRON_NETWORK=mainnet`. Before
    > recalibration is the **OPEN GAP that remains** (`config.ts` mainnet constants unchanged until
    > then); the Nile guard-delta measurement (this GAP's Nile half) is **closed**.
 
+   > **⚠ UPDATE (resource pre-check sprint) — recalibration DEFERRED (owner decision), and no longer a
+   > hard blocker for shipping.** The live re-measurement above needs a funded measure wallet + a
+   > one-time owner `approve` broadcast; rather than block on it, the owner accepted the current
+   > constants as **safe-by-margin** (they are mainnet-measured, not Nile; the S-1 guard adds <1%,
+   > inside the 1.5× `FEE_MARGIN`) and shipped the toolbar resource pre-check on top of them. Two
+   > follow-on facts:
+   > - **`ENERGY_PER_RECIPIENT_EXISTING = 91,000` was ADDED** to `config.ts`, derived from the SAME
+   >   2026-07-14 mainnet reading (existing N=3 = 275,747 → (275,747−3,100)/3 ≈ 90,882, rounded up;
+   >   fresh/existing ≈ 1.72×). It feeds the pre-check's fresh-vs-holder estimate; it is **not** a new
+   >   measurement, and carries the same "pre-guard, +guard <1%" provenance as the fresh constant.
+   > - **The pay-time simulation is now the LIVE SAFETY NET.** `runDisperse` runs a
+   >   `triggerConstantContract` of the real batch before signing (`simulateDisperseEnergy`), sizes
+   >   `fee_limit` from the measured energy (`feeLimitFromEnergy`), and blocks an unaffordable batch —
+   >   so even a stale constant can't cause an `OUT_OF_ENERGY`-that-pays-nobody. The
+   >   `scripts/tron/measure-mainnet.cjs` re-measurement still stands as diligence (tighter constants
+   >   + a real receipt cross-check), but it is no longer the only thing standing between a customer
+   >   and a burned payroll. See docs/03 §3c.
+
    > **⚠ NILE'S USDT WAS NOT REPRESENTATIVE OF MAINNET TETHER — a 3.9× MISS.** The Nile mock/rehearsal
    > read ~36,925 energy/recipient; mainnet reads **157,000**. The old Nile constant (40,000) left the
    > feeLimit under-provisioned — a real payroll to **4+ fresh (virgin) wallets** would have died

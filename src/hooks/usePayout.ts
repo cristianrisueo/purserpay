@@ -5,13 +5,19 @@ import type { OnChangeFn, RowSelectionState } from "@tanstack/react-table"
 import { useLiveQuery } from "dexie-react-hooks"
 
 import { storeBillingProfile, verifyRosterCompliance } from "@/app/actions/compliance"
-import { readBatchBlacklist } from "@/app/actions/preflight"
+import { readBatchBlacklist, readBatchPreflight } from "@/app/actions/preflight"
 import { recordDisperse } from "@/lib/affiliate/recordClient"
-import { type BlacklistStatus } from "@/lib/security/blacklist"
+import { type BlacklistStatus, type PreflightCell } from "@/lib/security/blacklist"
 import { classifyAddress } from "@/lib/security/exchangeDetect"
 import { previewBatch } from "@/lib/security/previewBatch"
 import { hasBlockingRow, summarizePreflight } from "@/lib/security/preflightView"
-import { runThrottledBlacklist } from "@/lib/security/preflightQueue"
+import { runThrottledReads } from "@/lib/security/preflightQueue"
+import {
+  assessResources,
+  estimateEnergyRequired,
+  type ResourceAssessment,
+  type WalletResources,
+} from "@/lib/security/resourceCheck"
 import { authorizePayout, releasePayout } from "@/lib/freeTier/authorizeClient"
 import { FREE_TIER_COOLDOWN_MS } from "@/lib/freeTier/gate"
 import { proveWalletControl } from "@/lib/payout/challengeClient"
@@ -42,13 +48,24 @@ import {
 } from "@/lib/receipts"
 import { downloadReceiptPdf, downloadReportPdf } from "@/lib/receiptPdf"
 import { isTargetNetwork } from "@/lib/tron/client"
-import { NETWORK, txExplorerUrl, type SubscriptionPlan } from "@/lib/tron/config"
+import {
+  BANDWIDTH_BASE_BYTES,
+  BANDWIDTH_PER_RECIPIENT_BYTES,
+  ENERGY_BASE,
+  ENERGY_PER_RECIPIENT_EXISTING,
+  ENERGY_PER_RECIPIENT_FRESH,
+  feeLimitForBatch,
+  NETWORK,
+  txExplorerUrl,
+  type SubscriptionPlan,
+} from "@/lib/tron/config"
 import { toBaseUnits } from "@/lib/tron/amount"
 import {
   getUsdtBalance,
   runDisperse,
   type DisperseRow,
 } from "@/lib/tron/disperse"
+import { getWalletResources } from "@/lib/tron/resources"
 import { humanize, PurserError } from "@/lib/tron/errors"
 import {
   getSubscriptionStatus,
@@ -181,6 +198,7 @@ export function usePayout() {
   // --- Wallet -------------------------------------------------------------
   const [account, setAccount] = useState<WalletAccount | null>(null)
   const [balanceUnits, setBalanceUnits] = useState<bigint | null>(null)
+  const [resources, setResources] = useState<WalletResources | null>(null)
   const [host, setHost] = useState<string>("")
   const [walletError, setWalletError] = useState<PurserError | null>(null)
   // True once the mount-time wallet hydrate has run (whether or not it found an
@@ -197,6 +215,16 @@ export function usePayout() {
     }
   }, [])
 
+  // The operator's live energy / bandwidth / TRX + chain fee params, for the payout resource
+  // pre-check. Refreshed on the SAME wallet-lifecycle events as the balance (connect / hydrate /
+  // account change / after a payout) — NOT on selection change (resources don't move with what's
+  // checked; only the required-energy estimate does, which is pure compute). getWalletResources
+  // never throws — it returns null on any read failure, rendering the pre-check "unknown" (never a
+  // false "you're covered", never a block on missing data).
+  const refreshResources = useCallback(async (address: string) => {
+    setResources(await getWalletResources(address))
+  }, [])
+
   const connect = useCallback(
     async (providerId: WalletProviderId = "tronlink") => {
       setWalletError(null)
@@ -206,17 +234,19 @@ export function usePayout() {
         setAccount(acc)
         setHost(provider.getProviderHost())
         void refreshBalance(acc.address)
+        void refreshResources(acc.address)
       } catch (e) {
         setWalletError(humanize(e))
       }
     },
-    [refreshBalance]
+    [refreshBalance, refreshResources]
   )
 
   const disconnect = useCallback(async () => {
     if (account) await getWalletProvider(account.providerId).disconnect()
     setAccount(null)
     setBalanceUnits(null)
+    setResources(null)
     setHost("")
     setWalletError(null)
     // On-chain verification levels are cleared by the verify effect once
@@ -242,13 +272,14 @@ export function usePayout() {
         })
         setHost(provider.getProviderHost())
         void refreshBalance(addr)
+        void refreshResources(addr)
       }
       setWalletHydrated(true)
     })
     return () => {
       cancelled = true
     }
-  }, [refreshBalance])
+  }, [refreshBalance, refreshResources])
 
   // React to account/network changes coming from the wallet itself.
   useEffect(() => {
@@ -261,14 +292,16 @@ export function usePayout() {
         // User disconnected/locked inside the wallet.
         setAccount(null)
         setBalanceUnits(null)
+        setResources(null)
         return
       }
       if (addr !== account.address) {
         setAccount({ ...account, address: addr })
       }
       void refreshBalance(addr)
+      void refreshResources(addr)
     })
-  }, [account, refreshBalance])
+  }, [account, refreshBalance, refreshResources])
 
   // --- Verification (✓ / ✓✓) ----------------------------------------------
   const addressesKey = useMemo(
@@ -470,6 +503,13 @@ export function usePayout() {
     Map<string, BlacklistStatus>
   >(new Map())
   const [checkingAddrs, setCheckingAddrs] = useState<Set<string>>(new Set())
+  // Per-address USDT-holding readings (Sprint: resource pre-check), accumulated alongside the frozen
+  // readings from the SAME combined queue read (one server round-trip per batch). true = holds USDT
+  // (cheaper existing-holder energy), false = fresh (the expensive storage write), null = unread →
+  // the estimate treats it as FRESH (worst case, never under-sizes energy).
+  const [holdingByAddress, setHoldingByAddress] = useState<
+    Map<string, boolean | null>
+  >(new Map())
   // The exchange accept-and-pay gate: the rows to disclaim, non-null while the dialog is open.
   const [exchangeConfirm, setExchangeConfirm] = useState<
     { rows: { address: string; exchange?: string }[] } | null
@@ -532,7 +572,7 @@ export function usePayout() {
 
     // Reconcile: KEEP readings for addresses still in the roster, drop the rest (a removed/edited
     // row can't keep a stale badge). Merge, don't wipe — surviving badges stay stable, so adding one
-    // payee never flips the rest back to "Verifying…".
+    // payee never flips the rest back to "Verifying…". Frozen AND holding are reconciled together.
     setBlacklistByAddress((prev) => {
       let changed = false
       const next = new Map<string, BlacklistStatus>()
@@ -542,12 +582,22 @@ export function usePayout() {
       }
       return changed ? next : prev
     })
+    setHoldingByAddress((prev) => {
+      let changed = false
+      const next = new Map<string, boolean | null>()
+      for (const [addr, h] of prev) {
+        if (present.has(addr)) next.set(addr, h)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
     // Freshly re-set per batch inside preflightThenPay; clear defensively on any roster change.
     rowFrozenRef.current = new Set()
 
     // Cancel any prior run, then queue ONLY the addresses without a reading yet (adding one payee
     // reads one address; a fresh import reads them all). `blacklistRef` reflects the pre-reconcile
-    // readings — surviving addresses are still in it, so they are skipped.
+    // frozen readings — surviving addresses are still in it, so they are skipped; holding is read in
+    // the SAME combined call, so a frozen reading implies a holding reading.
     const gen = ++eagerGenRef.current
     const need = uniqueAddrs.filter((a) => !blacklistRef.current.has(a))
     if (need.length === 0) {
@@ -556,11 +606,24 @@ export function usePayout() {
     }
     setCheckingAddrs(new Set(need)) // these rows show "Verifying…" until their read lands
 
-    void runThrottledBlacklist(need, readBatchBlacklist, {
+    // Combined frozen + holding read, one server round-trip per batch, on the shared throttled queue.
+    // D-7 fallback for a whole-batch throw: UNVERIFIED frozen + null holding (never SAFE, never a
+    // cheap-energy assumption).
+    void runThrottledReads<PreflightCell>(need, readBatchPreflight, {
+      fallback: () => ({ frozen: "UNVERIFIED", holdsUsdt: null }),
       isCancelled: () => eagerGenRef.current !== gen,
       onBatch: (entries) => {
         if (eagerGenRef.current !== gen) return // roster changed — discard these results
-        setBlacklistByAddress((prev) => new Map([...prev, ...entries]))
+        setBlacklistByAddress((prev) => {
+          const next = new Map(prev)
+          for (const [addr, cell] of entries) next.set(addr, cell.frozen)
+          return next
+        })
+        setHoldingByAddress((prev) => {
+          const next = new Map(prev)
+          for (const [addr, cell] of entries) next.set(addr, cell.holdsUsdt)
+          return next
+        })
         setCheckingAddrs((prev) => {
           const next = new Set(prev)
           for (const [addr] of entries) next.delete(addr)
@@ -586,6 +649,43 @@ export function usePayout() {
         }))
       ),
     [selected, rowFrozen, rowUnverified, rowExchange]
+  )
+
+  // --- Resource pre-check (Sprint: can this wallet afford the batch before signing) --------------
+  // Constant to ORIENT (this reactive toolbar estimate); MEASUREMENT to gate (a live simulation at
+  // pay time — runDisperse → simulateDisperseEnergy, see disperse.ts). Split the payable batch into
+  // fresh vs existing USDT holders (holding read above; unknown/pending → FRESH, the worst case) and
+  // size energy from the mainnet constants. Pure compute over already-fetched data, so it re-derives
+  // on every selection change with NO network call — resources are fetched on wallet lifecycle only.
+  const { freshCount, holdingCount } = useMemo(() => {
+    let fresh = 0
+    let holding = 0
+    for (const p of payable) {
+      // Only a definitive `true` (holds USDT) earns the cheaper existing-holder cost; `false` and
+      // null/undefined (doesn't hold, or unread) both count as FRESH — the estimate never under-sizes.
+      if (holdingByAddress.get(p.address) === true) holding++
+      else fresh++
+    }
+    return { freshCount: fresh, holdingCount: holding }
+  }, [payable, holdingByAddress])
+
+  const resourceAssessment = useMemo<ResourceAssessment>(
+    () =>
+      assessResources({
+        energyRequired: estimateEnergyRequired(freshCount, holdingCount, {
+          energyBase: ENERGY_BASE,
+          perFresh: ENERGY_PER_RECIPIENT_FRESH,
+          perExisting: ENERGY_PER_RECIPIENT_EXISTING,
+        }),
+        recipientCount: payable.length,
+        feeLimitSun: feeLimitForBatch(payable.length),
+        resources,
+        bandwidth: {
+          base: BANDWIDTH_BASE_BYTES,
+          perRecipient: BANDWIDTH_PER_RECIPIENT_BYTES,
+        },
+      }),
+    [freshCount, holdingCount, payable.length, resources]
   )
 
   // --- Subscription gate + OFAC screening ---------------------------------
@@ -721,7 +821,10 @@ export function usePayout() {
   const openPaywall = useCallback(() => setPaywallOpen(true), [])
 
   // Rule 5 — never enable a pay that would revert or silently skip anyone. In free
-  // mode "Pay all" is always locked (subscribe to pay the whole roster).
+  // mode "Pay all" is always locked (subscribe to pay the whole roster). A CONCLUSIVE resource
+  // shortfall (verdict "insufficient") also locks it — the batch would revert OUT_OF_ENERGY and pay
+  // nobody. "unknown" (resources unreadable) NEVER blocks (never on missing data); the authoritative
+  // pay-time simulation is the final gate (disperse.ts).
   const canPayAll =
     connected &&
     !wrongNetwork &&
@@ -730,7 +833,8 @@ export function usePayout() {
     !screening &&
     payable.length > 0 &&
     blockedCount === 0 &&
-    shortfallUnits <= 0n
+    shortfallUnits <= 0n &&
+    resourceAssessment.verdict !== "insufficient"
 
   // The real signing path — GATE 0 (wallet-control proof) → authorize → disperse. Reached ONLY
   // after preflightThenPay clears the frozen/exchange pre-flight (below), so a frozen destination
@@ -857,6 +961,9 @@ export function usePayout() {
       } finally {
         setBatchPhase({ kind: "idle" })
         void refreshBalance(account.address)
+        // Resources moved (energy/bandwidth burned, TRX spent, allowance changed) — re-read so the
+        // next batch's pre-check reflects reality.
+        void refreshResources(account.address)
       }
 
       // Free-tier bookkeeping. On success, flip the banner straight to the cooldown
@@ -875,7 +982,7 @@ export function usePayout() {
         }
       }
     },
-    [account, refreshBalance]
+    [account, refreshBalance, refreshResources]
   )
 
   // GATE -1 — the advisory frozen/exchange pre-flight, run at PAY-INITIATION (respecting the
@@ -1241,6 +1348,8 @@ export function usePayout() {
     anyPaid,
     hasPayments,
     canPayAll,
+    // resource pre-check (energy / bandwidth / TRX affordability, before signing)
+    resourceStatus: resourceAssessment,
     // subscription gate + OFAC
     subscriptionActive,
     subscriptionExpiresAt,
