@@ -63,7 +63,17 @@ const EXPECTED_DEPLOYER = requireEnv("EXPECTED_DEPLOYER"); // signer must equal 
 const MIN_TRX_FLOOR = Number(process.env.MIN_TRX_FLOOR || "80");
 
 const ARTIFACT = path.join(ROOT, "contracts/out/PurserPay.sol/PurserPay.json");
-const DEPLOY_FEE = 1_500 * L.SUN; // 1,500 TRX ceiling; actual burn far lower (userFeePercentage 100)
+// feeLimit sets the tx's TOTAL energy CEILING, not just a TRX-burn cap. TRON limits a contract tx
+// to feeLimit / energyFee energy (energyFee = 100 sun on mainnet), so feeLimit MUST be
+// >= requiredEnergy * energyFee or the tx reverts OUT_OF_ENERGY at that cap — EVEN IF the wallet
+// holds plenty of delegated/rented energy. Delegated energy only makes execution CHEAP (energy
+// drawn from it burns ~0 TRX); it does NOT raise this ceiling. So do NOT lower feeLimit to "save
+// TRX" when energy is rented: a low feeLimit does not reduce TRX burn (delegation already covers
+// it) — it just caps total energy and kills the deploy. (FEE_LIMIT_TRX=4 → a 40,000-energy cap
+// caused OUT_OF_ENERGY on 2026-07-23, vs the ~668,613 energy this deploy needs.) The 1,500 TRX
+// default is a safe ceiling BECAUSE delegated energy covers real consumption, so the TRX actually
+// burned for energy is ~0 regardless of how high the ceiling is. Override only UPWARD if ever needed.
+const DEPLOY_FEE = Number(process.env.FEE_LIMIT_TRX || "1500") * L.SUN;
 
 function loadArtifact() {
   if (!fs.existsSync(ARTIFACT)) {
@@ -111,8 +121,11 @@ async function main() {
   console.log(`  feeLimit ceiling:            ${L.sunToTrx(DEPLOY_FEE)} TRX (userFeePercentage 100)`);
   console.log(`  min TRX floor:               ${MIN_TRX_FLOOR} TRX`);
   console.log(
-    `  est. cost:                   ~58.05 TRX (580,485 energy × 100 sun) + ~3 TRX bandwidth ` +
-      `≈ 61 TRX — measured on the Nile deploy of THIS bytecode; scales with getEnergyFee`
+    `  est. cost:                   668,613 energy (measured on the 2026-07-23 mainnet deploy of ` +
+      `THIS guarded bytecode). With delegated/rented energy covering it, ~0 TRX is burned for ` +
+      `energy — the real cost is bandwidth only (~5.25 TRX). Without delegation it would be ` +
+      `~66.9 TRX (668,613 × 100 sun) + bandwidth. NOTE: feeLimit must be ≥ 668,613 × getEnergyFee ` +
+      `(≥ ~67 TRX ceiling) or the tx reverts OUT_OF_ENERGY — the ceiling is on TOTAL energy, not TRX burn`
   );
   console.log("──────────────────────────────────────────────────────────────");
 

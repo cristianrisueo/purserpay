@@ -25,12 +25,14 @@ Zero external Solidity dependencies: `ITRC20` (transfer selector) and `IUsdt` (t
 `getBlackListStatus` view the guard reads) are declared inline and ownership is inline (no
 OpenZeppelin import), matching the pure-Foundry / forge-std-only build.
 
-> **⚠ The S-1 guard changed the bytecode — a mainnet REDEPLOY (S-4) is still required.** The guard
-> is now **deployed + verified on Nile** (`TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`, N-1 2026-07-19 — the
-> S-4 dress rehearsal), but **mainnet is still the pre-guard build**. Today's mainnet contract
-> (`TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`) is **superseded once S-4 runs**, and
-> `feeLimitForBatch()` / `ENERGY_*` must be **re-measured with the guard included** on mainnet at
-> deploy (N-1 measured the guard's delta on Nile — see [`06`](./06-deployment.md) §6). The
+> **✅ The S-1 guard is now LIVE ON MAINNET (S-4 shipped 2026-07-23).** The guarded bytecode is
+> deployed + verified on **both** networks — Nile (`TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`, N-1
+> 2026-07-19 — the S-4 dress rehearsal) and **mainnet** (`TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm`, S-4
+> deploy tx `8572f28…`, 668,613 energy). This **supersedes the now-deprecated pre-guard mainnet
+> contract `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`**. ⚠ STILL OPEN: `feeLimitForBatch()` / `ENERGY_*`
+> must be **re-measured against the guarded mainnet contract + real Tether** before any real customer
+> batch — the pre-guard mainnet numbers under-size the fee for the guard's per-recipient blacklist
+> read (see [`06`](./06-deployment.md) §6 and the blocker at the top of `sprint_report.txt`). The
 > non-custodial invariant is unchanged.
 
 ## 2. Invariant & ownership model
@@ -160,9 +162,9 @@ initializes fees to `150e6 / 1500e6`.
 > The `disperse`/`Dispersed`/four-guard **selectors are byte-for-byte preserved** from the
 > prior `PurseDisperseUsdt` contract, so the frontend's positional call and revert-decoding
 > keep working across the rename to PurserPay. The three S-1 selectors are keccak-derived and
-> already registered in `abi.ts` (`ERROR_SELECTORS`); they are **mined on-chain on Nile as of
-> N-1** (the guarded redeploy, `TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`) but **not on mainnet until
-> S-4** deploys the guarded bytecode there.
+> already registered in `abi.ts` (`ERROR_SELECTORS`); they are **live on-chain on both networks** —
+> Nile as of **N-1** (`TH9vLTjvADpBeJ6E49HrwPerscYGsUU2wb`) and mainnet as of **S-4**
+> (`TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm`, 2026-07-23).
 
 ## 6. ABI ↔ frontend mapping (`src/lib/tron/abi.ts`)
 

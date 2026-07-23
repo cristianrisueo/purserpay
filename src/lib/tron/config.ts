@@ -47,9 +47,9 @@ type NetworkConfig = {
 // path is untouched. disperse is permissionless + immutable and now carries the S-1
 // frozen-address guard (reverts DestinationBlacklisted / SenderBlacklisted, USDT-only via
 // UnsupportedToken); the owner controls ONLY the subscription fees + the treasury
-// destination — never funds, keys, broadcast, or disperse. NOTE — Nile now LEADS mainnet:
-// this Nile block is the S-1 guarded build (N-1 rehearsal), while the MAINNET block below
-// is still the PRE-guard bytecode until the S-4 redeploy.
+// destination — never funds, keys, broadcast, or disperse. NOTE — both networks now run the
+// SAME S-1 guarded build: this Nile block shipped in N-1 (2026-07-19, the rehearsal), and the
+// MAINNET block below shipped the identical guarded bytecode in S-4 (2026-07-23).
 // Constructor: usdt = TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf (Nile USDT, Tether USD, 6dp),
 // treasuryWallet = owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer). Fees at deploy:
 // 150 / 1,500. Deploy tx: 610c560920a1248a829a641fd7ebf5446cf00dd2d0332ea14ff558ba683449c4
@@ -81,11 +81,14 @@ const NILE: NetworkConfig = {
 // the owner controls ONLY the subscription fees + treasury destination.
 // Constructor: usdt = TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t (Tether USD, 6dp),
 // treasuryWallet = owner = TESXcRcFMU2LwroehawwC2B3HgMYe3XSZ2 (deployer — the HOT key for launch;
-// move to cold/multisig via updateTreasuryWallet later, no redeploy — docs/06 §6). Fees at
-// deploy: 150 / 1,500. Deploy tx: 4f2bca105f5edbc468e3325fc150b2ef87066a439204b853e3c50bc4cf0a92e5
-// (62.71 TRX / 580,485 energy). Was the fail-closed sentinel (PENDING_DEPLOYMENT_ADDRESS) until
-// this deploy. NOTE: the code is wired for mainnet, but the PRODUCTION Vercel env flip
-// (NEXT_PUBLIC_TRON_NETWORK=mainnet) is still pending — customers are not on mainnet yet.
+// move to cold/multisig via updateTreasuryWallet later, no redeploy — docs/06 §6). Fees at deploy:
+// 150 / 1,500. GUARDED (S-1) build — deploy tx
+// 8572f2896637ae36ca0b0827b1644def5ded30f641c9c2ee1fdf75101d03c316 (2026-07-23; 668,613 energy,
+// 0 TRX for energy via delegation + ~5.248 TRX bandwidth; usdt()/treasury()/owner()/prices read
+// back on-chain ✓). SUPERSEDES the now-deprecated pre-guard mainnet contract
+// TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha (tx 4f2bca10…, 62.71 TRX / 580,485 energy). Both networks now
+// run the S-1 guarded build. Production goes live on mainnet when NEXT_PUBLIC_TRON_NETWORK=mainnet
+// is set in the Vercel Production env (this file wires the address; that env var is the go-live switch).
 const MAINNET: NetworkConfig = {
   network: {
     key: "mainnet",
@@ -94,7 +97,7 @@ const MAINNET: NetworkConfig = {
     hostMatch: "api.trongrid",
     explorer: "https://tronscan.org",
   },
-  purserPay: "TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha",
+  purserPay: "TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm",
   usdt: "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
 }
 
@@ -172,9 +175,16 @@ export const USDT_DECIMALS = 6
 export const BATCH_CAP = 100
 
 // --- feeLimit sizing --------------------------------------------------------
-// ✅ MAINNET-MEASURED (2026-07-14). Calibrated by CONSTANT-CALL SIMULATION
-// (triggerConstantContract — no signature, no spend) against the LIVE mainnet PurserPay
-// TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha with FRESH recipients (never held USDT).
+// ⚠ OPEN BLOCKER — PENDING MAINNET RE-MEASUREMENT AGAINST THE GUARDED CONTRACT (see the blocker
+// at the TOP of sprint_report.txt). These constants were mainnet-measured (2026-07-14) by
+// CONSTANT-CALL SIMULATION (triggerConstantContract — no signature, no spend) with FRESH recipients
+// (never held USDT), but against the NOW-SUPERSEDED PRE-GUARD contract
+// TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha (historical — that address is deprecated). The S-1 guarded
+// contract now live at TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm adds a per-recipient Tether blacklist read
+// (getBlackListStatus), so real per-row energy is HIGHER than these pre-guard numbers. Re-measure
+// against TH6TV… + real Tether (TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t) BEFORE any real customer batch —
+// shipping these under-sizes feeLimit and risks the exact OUT_OF_ENERGY revert (on a payroll, not a
+// deploy). Do NOT trust these constants for the guarded contract yet.
 // See scripts/tron/measure-mainnet.cjs and docs/06 §6. LINEAR FIT residual 0.0% on N=2/3/5 —
 // the BASE + PER·N model holds exactly:
 //   ENERGY_PER_RECIPIENT_FRESH = 157,000  (marginal per fresh recipient)

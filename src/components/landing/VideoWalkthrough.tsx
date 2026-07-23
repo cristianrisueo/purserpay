@@ -82,7 +82,7 @@ export function VideoWalkthrough({ label }: { label: string }) {
         {/* Live Video Surface */}
         <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-foreground">
           <video
-            src="https://rih9rm0wicuqlghy.public.blob.vercel-storage.com/purserpay_demo.mp4"
+            src="https://rih9rm0wicuqlghy.public.blob.vercel-storage.com/video_purserpay_original_copy-English_%28United_States%29_with_captions.mp4"
             controls
             autoPlay
             preload="metadata"

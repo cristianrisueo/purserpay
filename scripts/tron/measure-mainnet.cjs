@@ -28,7 +28,7 @@ const { TronWeb } = require("tronweb");
 
 // --- mainnet, hardcoded (this tool is mainnet-only by design) ---------------
 const FULL_HOST = "https://api.trongrid.io";
-const PURSERPAY = "TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha"; // live mainnet PurserPay
+const PURSERPAY = "TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm"; // live mainnet PurserPay — S-1 GUARDED (S-4, 2026-07-23); supersedes pre-guard TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha
 const USDT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; // mainnet Tether USD (6 dp)
 const EXPLORER = "https://tronscan.org";
 

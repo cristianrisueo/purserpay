@@ -56,14 +56,19 @@ propagation.
 
 ### Deployment
 
-- **Mainnet contract:** `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha` (TRON mainnet).
-- **Deploy tx:** `4f2bca105f5edbc468e3325fc150b2ef87066a439204b853e3c50bc4cf0a92e5` (62.71 TRX).
+- **Mainnet contract:** `TH6TVSJb7VG6fYjSGyHrHUhghJ1gg4PqXm` (TRON mainnet, **S-1 GUARDED** build,
+  S-4 2026-07-23) — supersedes the deprecated pre-guard `TLdySJX2pGRkD6jDNcJdtNd4bcLXCaYQha`.
+- **Deploy tx:** `8572f2896637ae36ca0b0827b1644def5ded30f641c9c2ee1fdf75101d03c316` (668,613 energy,
+  **0 TRX for energy** via delegation + ~5.25 TRX bandwidth).
 - **Token:** mainnet Tether USD-TRC20 `TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t` (verified as the
   contract's `usdt` immutable on-chain).
-- **MAINNET-measured energy constants:** `ENERGY_PER_RECIPIENT_FRESH = 157,000`,
-  `ENERGY_BASE = 3,100`, calibrated by constant-call simulation against the live contract (linear
-  fit, 0.0% residual). Nile's testnet mock USDT was **not** representative — a **3.9× miss**
-  (Nile read ~40,000/recipient) that would have killed a real payroll to fresh wallets with
-  `OUT_OF_ENERGY`. `feeLimit` at the 100-recipient batch cap ≈ 2,355 TRX (under the 15,000 TRX max).
+- **Energy constants (⚠ pending re-measurement against the guarded contract):**
+  `ENERGY_PER_RECIPIENT_FRESH = 157,000`, `ENERGY_BASE = 3,100`, calibrated by constant-call
+  simulation against the **pre-guard** live contract (linear fit, 0.0% residual). Nile's testnet mock
+  USDT was **not** representative — a **3.9× miss** (Nile read ~40,000/recipient) that would have
+  killed a real payroll to fresh wallets with `OUT_OF_ENERGY`. `feeLimit` at the 100-recipient batch
+  cap ≈ 2,355 TRX (under the 15,000 TRX max). The guarded contract adds a per-row blacklist read, so
+  these must be **re-measured on mainnet before any real customer batch** (open blocker — see
+  `sprint_report.txt`).
 
 [1.0.0]: https://github.com/cristianrisueo/purserpay/releases/tag/v1.0.0

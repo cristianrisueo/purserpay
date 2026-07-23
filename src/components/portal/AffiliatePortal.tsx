@@ -153,10 +153,8 @@ export function AffiliatePortal() {
       {phase === "ready" && data && (
         <>
           <ReceiptsList receipts={data.receipts} address={address} />
-          {/* TEMP: referral hidden for demo recording — UNCOMMENT before mainnet redeploy
           <ViralBanner />
           <ReferralPanel code={data.referralCode} bounty={data.bounty} />
-          */}
         </>
       )}
     </main>
@@ -430,8 +428,6 @@ function ReceiptRow({
 // No payout engine here (C4): this is a pitch, not a button. The 50 USDT/mo × 6mo
 // bounty is stated; the actual accrual + payout is manual/off-portal.
 
-// TEMP: referral hidden for demo recording — UNCOMMENT before mainnet redeploy (component kept, not rendered)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ViralBanner() {
   return (
     <section
@@ -451,8 +447,6 @@ function ViralBanner() {
 
 // --- Referral panel (opaque code + pending bounty figure) --------------------
 
-// TEMP: referral hidden for demo recording — UNCOMMENT before mainnet redeploy (component kept, not rendered)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ReferralPanel({
   code,
   bounty,
